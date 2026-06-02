@@ -7,6 +7,8 @@ import React, {
   useState,
 } from "react";
 
+import { supabase } from "@/lib/supabase";
+
 export interface Expense {
   id: string;
   amount: number;
@@ -52,9 +54,9 @@ const DEFAULT_QUICK_TEMPLATES: QuickTemplate[] = [
   { id: "qt_cab", label: "Cab", category: "Transport", amount: 300 },
 ];
 
-const STORAGE_KEYS = {
-  EXPENSES: "@exptrack_expenses",
-  BUDGETS: "@exptrack_budgets",
+// AsyncStorage fallback keys (used for quick templates & custom categories
+// which are user-preference data kept locally)
+const LOCAL_KEYS = {
   QUICK_TEMPLATES: "@exptrack_quick_templates",
   CUSTOM_CATEGORIES: "@exptrack_custom_categories",
 };
@@ -66,6 +68,7 @@ interface ExpenseContextValue {
   customCategories: CategoryInfo[];
   allCategories: CategoryInfo[];
   isLoading: boolean;
+  syncError: string | null;
   addExpense: (expense: Omit<Expense, "id" | "createdAt">) => Promise<void>;
   deleteExpense: (id: string) => Promise<void>;
   setMonthBudget: (month: string, amount: number) => Promise<void>;
@@ -92,74 +95,194 @@ export function ExpenseProvider({ children }: { children: React.ReactNode }) {
   );
   const [customCategories, setCustomCategories] = useState<CategoryInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  // ─── Initial Load ─────────────────────────────────────────────────────────
 
   useEffect(() => {
     async function load() {
+      setIsLoading(true);
+      setSyncError(null);
       try {
-        const [expStr, budStr, qtStr, ccStr] = await Promise.all([
-          AsyncStorage.getItem(STORAGE_KEYS.EXPENSES),
-          AsyncStorage.getItem(STORAGE_KEYS.BUDGETS),
-          AsyncStorage.getItem(STORAGE_KEYS.QUICK_TEMPLATES),
-          AsyncStorage.getItem(STORAGE_KEYS.CUSTOM_CATEGORIES),
-        ]);
-        if (expStr) setExpenses(JSON.parse(expStr) as Expense[]);
-        if (budStr) setBudgets(JSON.parse(budStr) as MonthBudget[]);
-        if (qtStr)
-          setQuickTemplates(JSON.parse(qtStr) as QuickTemplate[]);
-        else setQuickTemplates(DEFAULT_QUICK_TEMPLATES);
-        if (ccStr) setCustomCategories(JSON.parse(ccStr) as CategoryInfo[]);
-      } catch {
-        // ignore storage errors
+        // Load expenses from Supabase
+        const { data: expData, error: expError } = await supabase
+          .from("expenses")
+          .select("*")
+          .order("date", { ascending: false })
+          .order("created_at", { ascending: false });
+
+        if (expError) throw expError;
+
+        const mapped: Expense[] = (expData ?? []).map((r: any) => ({
+          id: r.id,
+          amount: r.amount,
+          category: r.category,
+          note: r.note ?? "",
+          date: r.date,
+          createdAt: r.created_at,
+        }));
+        setExpenses(mapped);
+
+        // Load budgets from Supabase
+        const { data: budData, error: budError } = await supabase
+          .from("budgets")
+          .select("*");
+
+        if (budError) throw budError;
+
+        const mappedBudgets: MonthBudget[] = (budData ?? []).map((r: any) => ({
+          month: r.month,
+          amount: r.amount,
+        }));
+        setBudgets(mappedBudgets);
+      } catch (err: any) {
+        setSyncError(err?.message ?? "Failed to load data from Supabase");
       } finally {
         setIsLoading(false);
+      }
+
+      // Load local-only preferences
+      try {
+        const [qtStr, ccStr] = await Promise.all([
+          AsyncStorage.getItem(LOCAL_KEYS.QUICK_TEMPLATES),
+          AsyncStorage.getItem(LOCAL_KEYS.CUSTOM_CATEGORIES),
+        ]);
+        if (qtStr) setQuickTemplates(JSON.parse(qtStr) as QuickTemplate[]);
+        if (ccStr) setCustomCategories(JSON.parse(ccStr) as CategoryInfo[]);
+      } catch {
+        // ignore local storage errors
       }
     }
     load();
   }, []);
 
+  // ─── Realtime subscription ─────────────────────────────────────────────────
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("expenses_changes")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "expenses" },
+        (payload) => {
+          if (payload.eventType === "INSERT") {
+            const r = payload.new as any;
+            const newExp: Expense = {
+              id: r.id,
+              amount: r.amount,
+              category: r.category,
+              note: r.note ?? "",
+              date: r.date,
+              createdAt: r.created_at,
+            };
+            setExpenses((prev) => {
+              if (prev.find((e) => e.id === newExp.id)) return prev;
+              return [newExp, ...prev];
+            });
+          } else if (payload.eventType === "DELETE") {
+            setExpenses((prev) =>
+              prev.filter((e) => e.id !== (payload.old as any).id)
+            );
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "budgets" },
+        (payload) => {
+          if (
+            payload.eventType === "INSERT" ||
+            payload.eventType === "UPDATE"
+          ) {
+            const r = payload.new as any;
+            setBudgets((prev) => {
+              const filtered = prev.filter((b) => b.month !== r.month);
+              return [...filtered, { month: r.month, amount: r.amount }];
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  // ─── Expenses ─────────────────────────────────────────────────────────────
+
   const addExpense = useCallback(
     async (expense: Omit<Expense, "id" | "createdAt">) => {
-      const newExpense: Expense = {
-        ...expense,
-        id: generateId(),
-        createdAt: new Date().toISOString(),
-      };
-      setExpenses((prev) => {
-        const updated = [newExpense, ...prev];
-        AsyncStorage.setItem(
-          STORAGE_KEYS.EXPENSES,
-          JSON.stringify(updated)
-        ).catch(() => {});
-        return updated;
+      const id = generateId();
+      const createdAt = new Date().toISOString();
+
+      // Optimistic update
+      const newExpense: Expense = { ...expense, id, createdAt };
+      setExpenses((prev) => [newExpense, ...prev]);
+
+      const { error } = await supabase.from("expenses").insert({
+        id,
+        amount: expense.amount,
+        category: expense.category,
+        note: expense.note,
+        date: expense.date,
+        created_at: createdAt,
       });
+
+      if (error) {
+        // Rollback optimistic update
+        setExpenses((prev) => prev.filter((e) => e.id !== id));
+        setSyncError(error.message);
+      }
     },
     []
   );
 
   const deleteExpense = useCallback(async (id: string) => {
-    setExpenses((prev) => {
-      const updated = prev.filter((e) => e.id !== id);
-      AsyncStorage.setItem(
-        STORAGE_KEYS.EXPENSES,
-        JSON.stringify(updated)
-      ).catch(() => {});
-      return updated;
-    });
+    // Optimistic update
+    setExpenses((prev) => prev.filter((e) => e.id !== id));
+
+    const { error } = await supabase.from("expenses").delete().eq("id", id);
+
+    if (error) {
+      // Re-fetch to restore
+      setSyncError(error.message);
+      const { data } = await supabase
+        .from("expenses")
+        .select("*")
+        .order("date", { ascending: false });
+      if (data) {
+        setExpenses(
+          data.map((r: any) => ({
+            id: r.id,
+            amount: r.amount,
+            category: r.category,
+            note: r.note ?? "",
+            date: r.date,
+            createdAt: r.created_at,
+          }))
+        );
+      }
+    }
   }, []);
 
-  const setMonthBudget = useCallback(
-    async (month: string, amount: number) => {
-      setBudgets((prev) => {
-        const updated = [...prev.filter((b) => b.month !== month), { month, amount }];
-        AsyncStorage.setItem(
-          STORAGE_KEYS.BUDGETS,
-          JSON.stringify(updated)
-        ).catch(() => {});
-        return updated;
-      });
-    },
-    []
-  );
+  // ─── Budgets ──────────────────────────────────────────────────────────────
+
+  const setMonthBudget = useCallback(async (month: string, amount: number) => {
+    // Optimistic update
+    setBudgets((prev) => {
+      const filtered = prev.filter((b) => b.month !== month);
+      return [...filtered, { month, amount }];
+    });
+
+    const { error } = await supabase
+      .from("budgets")
+      .upsert({ month, amount }, { onConflict: "month" });
+
+    if (error) {
+      setSyncError(error.message);
+    }
+  }, []);
 
   const getMonthBudget = useCallback(
     (month: string) => {
@@ -182,13 +305,15 @@ export function ExpenseProvider({ children }: { children: React.ReactNode }) {
     [expenses]
   );
 
+  // ─── Quick Templates (local) ──────────────────────────────────────────────
+
   const addQuickTemplate = useCallback(
     async (template: Omit<QuickTemplate, "id">) => {
       const newTemplate: QuickTemplate = { ...template, id: generateId() };
       setQuickTemplates((prev) => {
         const updated = [...prev, newTemplate];
         AsyncStorage.setItem(
-          STORAGE_KEYS.QUICK_TEMPLATES,
+          LOCAL_KEYS.QUICK_TEMPLATES,
           JSON.stringify(updated)
         ).catch(() => {});
         return updated;
@@ -201,18 +326,20 @@ export function ExpenseProvider({ children }: { children: React.ReactNode }) {
     setQuickTemplates((prev) => {
       const updated = prev.filter((t) => t.id !== id);
       AsyncStorage.setItem(
-        STORAGE_KEYS.QUICK_TEMPLATES,
+        LOCAL_KEYS.QUICK_TEMPLATES,
         JSON.stringify(updated)
       ).catch(() => {});
       return updated;
     });
   }, []);
 
+  // ─── Custom Categories (local) ────────────────────────────────────────────
+
   const addCustomCategory = useCallback(async (info: CategoryInfo) => {
     setCustomCategories((prev) => {
       const updated = [...prev, info];
       AsyncStorage.setItem(
-        STORAGE_KEYS.CUSTOM_CATEGORIES,
+        LOCAL_KEYS.CUSTOM_CATEGORIES,
         JSON.stringify(updated)
       ).catch(() => {});
       return updated;
@@ -237,6 +364,7 @@ export function ExpenseProvider({ children }: { children: React.ReactNode }) {
         customCategories,
         allCategories,
         isLoading,
+        syncError,
         addExpense,
         deleteExpense,
         setMonthBudget,
