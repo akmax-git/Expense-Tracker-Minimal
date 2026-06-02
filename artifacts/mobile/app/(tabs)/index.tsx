@@ -4,6 +4,7 @@ import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
   Alert,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -15,7 +16,6 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
 import { BudgetRing } from "@/components/BudgetRing";
 import { ExpenseItem } from "@/components/ExpenseItem";
 import { useAuth } from "@/context/AuthContext";
@@ -120,7 +120,12 @@ export default function DashboardScreen() {
         >
           <Ionicons name="chevron-back" size={22} color={colors.foreground} />
         </Pressable>
-        <Pressable onPress={() => setMonth(currentMonth)}>
+        <Pressable onPress={() => setMonth(currentMonth)} style={styles.headerCenter}>
+          <Image
+            source={require("@/assets/images/lifeeasy-logo.png")}
+            style={styles.headerLogo}
+            resizeMode="contain"
+          />
           <Text style={[styles.headerMonth, { color: colors.foreground }]}>
             {formatMonth(month)}
           </Text>
@@ -420,6 +425,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 12,
     borderBottomWidth: 1,
+  },
+  headerCenter: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  headerLogo: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
   },
   headerMonth: {
     fontSize: 17,
