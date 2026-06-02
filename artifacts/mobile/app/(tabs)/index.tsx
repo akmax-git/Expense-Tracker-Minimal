@@ -122,7 +122,7 @@ export default function DashboardScreen() {
         </Pressable>
         <Pressable onPress={() => setMonth(currentMonth)} style={styles.headerCenter}>
           <Image
-            source={require("@/assets/images/lifeeasy-logo.png")}
+            source={require("@/assets/images/lifeeasy-logo-nobg.png")}
             style={styles.headerLogo}
             resizeMode="contain"
           />

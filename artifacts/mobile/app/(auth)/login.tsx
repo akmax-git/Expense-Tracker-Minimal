@@ -95,7 +95,7 @@ export default function LoginScreen() {
           <View style={styles.brandSection}>
             <View style={styles.logoWrapper}>
               <Image
-                source={require("@/assets/images/lifeeasy-logo.png")}
+                source={require("@/assets/images/lifeeasy-logo-nobg.png")}
                 style={styles.logo}
                 resizeMode="contain"
               />
@@ -301,17 +301,13 @@ const styles = StyleSheet.create({
   logoWrapper: {
     width: 100,
     height: 100,
-    borderRadius: 28,
-    backgroundColor: "rgba(255,255,255,0.06)",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 14,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
   },
   logo: {
-    width: 80,
-    height: 80,
+    width: 100,
+    height: 100,
   },
   brandName: {
     fontSize: 32,
