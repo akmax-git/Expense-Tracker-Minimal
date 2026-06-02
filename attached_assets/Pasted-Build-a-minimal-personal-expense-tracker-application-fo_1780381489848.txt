@@ -1,0 +1,188 @@
+Build a minimal personal expense tracker application for a single user (myself).
+
+The goal is to quickly track expenses and monitor my monthly budget without unnecessary complexity.
+
+## Core Features
+
+### Monthly Budget
+
+Allow me to set a monthly budget amount.
+
+Example:
+
+Monthly Budget: ₹30,000
+
+Display:
+
+* Total Budget
+* Total Spent
+* Remaining Budget
+* Percentage Used
+
+---
+
+### Add Expense
+
+Very fast expense entry.
+
+Fields:
+
+* Amount
+* Category
+* Note (optional)
+* Date
+
+One-click Save button.
+
+---
+
+### Categories
+
+Default Categories:
+
+🍔 Food
+
+☕ Coffee
+
+🚗 Transport
+
+🛒 Shopping
+
+🎬 Entertainment
+
+🏠 Home
+
+💻 Work
+
+✈ Travel
+
+📦 Miscellaneous
+
+Allow custom categories.
+
+---
+
+### Dashboard
+
+Show:
+
+Current Month Budget
+
+₹30,000
+
+Spent
+
+₹12,450
+
+Remaining
+
+₹17,550
+
+Progress Bar
+
+Budget Usage %
+
+---
+
+### Analytics
+
+Show:
+
+1. Pie Chart by Category
+
+2. Last 30 Days Spending Trend
+
+3. Top Spending Category
+
+4. Average Daily Spending
+
+---
+
+### Smart Insights
+
+Generate simple insights:
+
+* Biggest spending category
+* Days with highest spending
+* Remaining daily budget for the month
+
+Example:
+
+"You can spend ₹580/day for the rest of this month and stay within budget."
+
+---
+
+### Calendar View
+
+Show expenses on a calendar.
+
+Click any date to view expenses recorded that day.
+
+---
+
+### Search & Filter
+
+Filter by:
+
+* Month
+* Category
+
+Search by notes.
+
+---
+
+### Quick Add Shortcuts
+
+Frequently used expenses should appear as quick buttons.
+
+Example:
+
+☕ Coffee ₹120
+
+🍔 Lunch ₹250
+
+🚕 Cab ₹300
+
+Clicking adds expense instantly.
+
+---
+
+### Monthly Reset
+
+At the beginning of a new month:
+
+* Create a fresh budget cycle
+* Keep previous months in history
+
+---
+
+### Data Storage
+
+Use Local Storage.
+
+No login.
+
+No backend.
+
+Everything stored locally in browser.
+
+---
+
+### UI Style
+
+Clean and modern.
+
+Inspired by:
+
+* Apple
+* Notion
+* Linear
+
+Use:
+
+* Dark Mode
+* Responsive Design
+* Beautiful Cards
+* Smooth Animations
+
+The application should open directly on the dashboard and allow adding an expense within 3 seconds.
