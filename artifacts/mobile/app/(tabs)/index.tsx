@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BudgetRing } from "@/components/BudgetRing";
 import { ExpenseItem } from "@/components/ExpenseItem";
+import { useAuth } from "@/context/AuthContext";
 import {
   currentMonth,
   formatINR,
@@ -41,6 +42,7 @@ function getDaysRemainingInMonth(): number {
 export default function DashboardScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { user, signOut } = useAuth();
   const {
     getMonthExpenses,
     getMonthBudget,
@@ -139,8 +141,20 @@ export default function DashboardScreen() {
               setBudgetModalVisible(true);
             }}
             hitSlop={12}
+            style={{ marginRight: 8 }}
           >
             <Ionicons name="settings-outline" size={22} color={colors.mutedForeground} />
+          </Pressable>
+          <Pressable
+            onPress={() =>
+              Alert.alert("Sign out", "Are you sure you want to sign out?", [
+                { text: "Cancel", style: "cancel" },
+                { text: "Sign out", style: "destructive", onPress: signOut },
+              ])
+            }
+            hitSlop={12}
+          >
+            <Ionicons name="log-out-outline" size={22} color={colors.mutedForeground} />
           </Pressable>
         </View>
       </View>

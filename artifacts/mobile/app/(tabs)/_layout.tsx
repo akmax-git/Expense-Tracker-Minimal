@@ -7,6 +7,8 @@ import { Feather } from "@expo/vector-icons";
 import React from "react";
 import { Platform, StyleSheet, View, useColorScheme } from "react-native";
 
+import { useAuth } from "@/context/AuthContext";
+import { ExpenseProvider } from "@/context/ExpenseContext";
 import { useColors } from "@/hooks/useColors";
 
 function NativeTabLayout() {
@@ -139,8 +141,12 @@ function ClassicTabLayout() {
 }
 
 export default function TabLayout() {
-  if (isLiquidGlassAvailable()) {
-    return <NativeTabLayout />;
-  }
-  return <ClassicTabLayout />;
+  const { user } = useAuth();
+  const inner = isLiquidGlassAvailable() ? (
+    <NativeTabLayout />
+  ) : (
+    <ClassicTabLayout />
+  );
+  if (!user) return null;
+  return <ExpenseProvider userId={user.id}>{inner}</ExpenseProvider>;
 }
