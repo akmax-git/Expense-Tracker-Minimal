@@ -17,16 +17,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "@/context/AuthContext";
 
-// Brand colours
 const GREEN = "#00C853";
 const BLUE = "#1565C0";
 const BLUE_DARK = "#0D47A1";
-const BG = "#07111E";
-const CARD = "#0D1F36";
-const BORDER = "#1A2E4A";
-const INPUT_BG = "#0F1A2E";
-const MUTED = "#7A8FAD";
 const WHITE = "#FFFFFF";
+const MUTED = "#94A3B8";
+const BORDER = "#E2E8F0";
+const LABEL = "#64748B";
+const ERROR_RED = "#EF4444";
 
 export default function SignupScreen() {
   const insets = useSafeAreaInsets();
@@ -74,38 +72,39 @@ export default function SignupScreen() {
     return (
       <View style={styles.root}>
         <LinearGradient
-          colors={["#050E1A", "#07111E", "#0A1728"]}
-          style={StyleSheet.absoluteFill}
-        />
-        <View style={[styles.orb, styles.orbGreen]} />
-        <View style={[styles.orb, styles.orbBlue]} />
-        <View style={styles.successContainer}>
-          <View style={styles.successCard}>
-            <LinearGradient
-              colors={[GREEN, BLUE]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.cardTopBorder}
+          colors={["#0A1628", "#0F1E38", "#07111E"]}
+          style={styles.hero}
+        >
+          <View style={styles.logoBadge}>
+            <Image
+              source={require("@/assets/images/lifeeasy-logo-nobg.png")}
+              style={styles.logo}
+              resizeMode="contain"
             />
-            <LinearGradient
-              colors={[GREEN + "33", BLUE + "33"]}
-              style={styles.successIconBox}
-            >
-              <Text style={{ fontSize: 40 }}>✓</Text>
-            </LinearGradient>
-            <Text style={styles.successTitle}>You're in! 🎉</Text>
-            <Text style={styles.successSub}>
+          </View>
+          <Text style={styles.appName}>Lifeeasy</Text>
+        </LinearGradient>
+        <View style={[styles.sheet, { flex: 1 }]}>
+          <View style={styles.successContent}>
+            <View style={styles.successIconBox}>
+              <Text style={{ fontSize: 38 }}>🎉</Text>
+            </View>
+            <Text style={styles.title}>Account created!</Text>
+            <Text style={[styles.subtitle, { textAlign: "center" }]}>
               Check your email for a confirmation link, then sign in to start
-              tracking your expenses.
+              tracking your finances.
             </Text>
-            <Pressable onPress={() => router.replace("/(auth)/login")}>
+            <Pressable
+              onPress={() => router.replace("/(auth)/login")}
+              style={{ width: "100%" }}
+            >
               <LinearGradient
-                colors={[GREEN, "#00A045", BLUE_DARK]}
+                colors={[GREEN, "#00A844", BLUE_DARK]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
-                style={styles.signInBtn}
+                style={styles.primaryBtn}
               >
-                <Text style={styles.signInBtnText}>Go to Sign In →</Text>
+                <Text style={styles.primaryBtnText}>Go to Sign In →</Text>
               </LinearGradient>
             </Pressable>
           </View>
@@ -116,174 +115,168 @@ export default function SignupScreen() {
 
   return (
     <View style={styles.root}>
+      {/* Top hero */}
       <LinearGradient
-        colors={["#050E1A", "#07111E", "#0A1728"]}
-        style={StyleSheet.absoluteFill}
-      />
-      <View style={[styles.orb, styles.orbGreen]} />
-      <View style={[styles.orb, styles.orbBlue]} />
+        colors={["#0A1628", "#0F1E38", "#07111E"]}
+        style={styles.hero}
+      >
+        <View style={styles.logoBadge}>
+          <Image
+            source={require("@/assets/images/lifeeasy-logo-nobg.png")}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+        </View>
+        <Text style={styles.appName}>Lifeeasy</Text>
+        <Text style={styles.tagline}>Create your free account</Text>
+      </LinearGradient>
 
+      {/* White form sheet */}
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
+        style={styles.sheet}
       >
         <ScrollView
           contentContainerStyle={[
             styles.scroll,
-            { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 40 },
+            { paddingBottom: insets.bottom + 32 },
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Logo + brand */}
-          <View style={styles.brandSection}>
-            <View style={styles.logoWrapper}>
-              <Image
-                source={require("@/assets/images/lifeeasy-logo-nobg.png")}
-                style={styles.logo}
-                resizeMode="contain"
-              />
-            </View>
-            <Text style={styles.brandName}>Lifeeasy</Text>
-            <Text style={styles.brandTagline}>Smart money. Simplified life.</Text>
-          </View>
+          <Text style={styles.title}>Get started</Text>
+          <Text style={styles.subtitle}>
+            Join thousands managing their money
+          </Text>
 
-          {/* Card */}
-          <View style={styles.card}>
-            <LinearGradient
-              colors={[GREEN, BLUE]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.cardTopBorder}
-            />
-            <Text style={styles.cardTitle}>Create account</Text>
-            <Text style={styles.cardSub}>Join thousands managing their finances</Text>
-
-            {/* Name */}
-            <View style={styles.fieldGroup}>
-              <Text style={styles.label}>FULL NAME</Text>
-              <InputField
+          {/* Name */}
+          <View style={styles.field}>
+            <Text style={styles.label}>FULL NAME</Text>
+            <View
+              style={[styles.inputBox, nameFocused && styles.inputBoxFocused]}
+            >
+              <Text style={styles.fieldIcon}>👤</Text>
+              <TextInput
                 value={name}
                 onChangeText={setName}
-                placeholder="Your name"
-                icon="👤"
-                autoCapitalize="words"
-                focused={nameFocused}
                 onFocus={() => setNameFocused(true)}
                 onBlur={() => setNameFocused(false)}
+                placeholder="Your name"
+                placeholderTextColor={MUTED}
+                autoCapitalize="words"
+                style={styles.input}
               />
             </View>
+          </View>
 
-            {/* Email */}
-            <View style={styles.fieldGroup}>
-              <Text style={styles.label}>EMAIL ADDRESS</Text>
-              <InputField
+          {/* Email */}
+          <View style={styles.field}>
+            <Text style={styles.label}>EMAIL</Text>
+            <View
+              style={[styles.inputBox, emailFocused && styles.inputBoxFocused]}
+            >
+              <Text style={styles.fieldIcon}>✉</Text>
+              <TextInput
                 value={email}
                 onChangeText={setEmail}
+                onFocus={() => setEmailFocused(true)}
+                onBlur={() => setEmailFocused(false)}
                 placeholder="you@example.com"
-                icon="✉"
+                placeholderTextColor={MUTED}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
-                focused={emailFocused}
-                onFocus={() => setEmailFocused(true)}
-                onBlur={() => setEmailFocused(false)}
+                style={styles.input}
               />
             </View>
+          </View>
 
-            {/* Password */}
-            <View style={styles.fieldGroup}>
-              <Text style={styles.label}>PASSWORD</Text>
-              <View
-                style={[
-                  styles.inputWrap,
-                  passFocused && styles.inputWrapFocused,
-                ]}
-              >
-                {passFocused && (
-                  <LinearGradient
-                    colors={[GREEN, BLUE]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.inputBorderGradient}
-                  />
-                )}
-                <View style={styles.inputInner}>
-                  <Text style={styles.inputIcon}>🔒</Text>
-                  <TextInput
-                    value={password}
-                    onChangeText={setPassword}
-                    onFocus={() => setPassFocused(true)}
-                    onBlur={() => setPassFocused(false)}
-                    placeholder="Min. 6 characters"
-                    placeholderTextColor={MUTED}
-                    secureTextEntry={!showPass}
-                    autoCapitalize="none"
-                    style={styles.input}
-                  />
-                  <Pressable onPress={() => setShowPass((v) => !v)} hitSlop={12}>
-                    <Text style={{ fontSize: 14 }}>{showPass ? "🙈" : "👁"}</Text>
-                  </Pressable>
-                </View>
-              </View>
-            </View>
-
-            {error && (
-              <View style={styles.errorBox}>
-                <Text style={{ fontSize: 13, color: "#FF4757" }}>⚠</Text>
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            )}
-
-            <Pressable
-              onPress={handleSignup}
-              disabled={loading}
-              style={({ pressed }) => [{ opacity: pressed || loading ? 0.85 : 1 }]}
+          {/* Password */}
+          <View style={styles.field}>
+            <Text style={styles.label}>PASSWORD</Text>
+            <View
+              style={[styles.inputBox, passFocused && styles.inputBoxFocused]}
             >
-              <LinearGradient
-                colors={[GREEN, "#00A045", BLUE_DARK]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.signInBtn}
+              <Text style={styles.fieldIcon}>🔒</Text>
+              <TextInput
+                value={password}
+                onChangeText={setPassword}
+                onFocus={() => setPassFocused(true)}
+                onBlur={() => setPassFocused(false)}
+                placeholder="Min. 6 characters"
+                placeholderTextColor={MUTED}
+                secureTextEntry={!showPass}
+                autoCapitalize="none"
+                style={styles.input}
+              />
+              <Pressable
+                onPress={() => setShowPass((v) => !v)}
+                hitSlop={12}
               >
-                {loading ? (
-                  <ActivityIndicator color={WHITE} size="small" />
-                ) : (
-                  <Text style={styles.signInBtnText}>Create Account →</Text>
-                )}
-              </LinearGradient>
-            </Pressable>
-
-            <View style={styles.divider}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or continue with</Text>
-              <View style={styles.dividerLine} />
+                <Text style={{ fontSize: 15 }}>{showPass ? "🙈" : "👁"}</Text>
+              </Pressable>
             </View>
+          </View>
 
-            <Pressable
-              onPress={handleGoogle}
-              disabled={googleLoading}
-              style={({ pressed }) => [
-                styles.googleBtn,
-                { opacity: pressed || googleLoading ? 0.75 : 1 },
-              ]}
+          {error && (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>⚠ {error}</Text>
+            </View>
+          )}
+
+          <Pressable
+            onPress={handleSignup}
+            disabled={loading}
+            style={({ pressed }) => [
+              { opacity: pressed || loading ? 0.85 : 1, marginTop: 8 },
+            ]}
+          >
+            <LinearGradient
+              colors={[GREEN, "#00A844", BLUE_DARK]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.primaryBtn}
             >
-              {googleLoading ? (
+              {loading ? (
                 <ActivityIndicator color={WHITE} size="small" />
               ) : (
-                <>
-                  <View style={styles.googleIconBox}>
-                    <Text style={styles.googleG}>G</Text>
-                  </View>
-                  <Text style={styles.googleBtnText}>Google</Text>
-                </>
+                <Text style={styles.primaryBtnText}>Create Account →</Text>
               )}
-            </Pressable>
+            </LinearGradient>
+          </Pressable>
+
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
           </View>
+
+          <Pressable
+            onPress={handleGoogle}
+            disabled={googleLoading}
+            style={({ pressed }) => [
+              styles.googleBtn,
+              { opacity: pressed || googleLoading ? 0.75 : 1 },
+            ]}
+          >
+            {googleLoading ? (
+              <ActivityIndicator color={BLUE} size="small" />
+            ) : (
+              <>
+                <View style={styles.googleIconBox}>
+                  <Text style={styles.googleG}>G</Text>
+                </View>
+                <Text style={styles.googleText}>Continue with Google</Text>
+              </>
+            )}
+          </Pressable>
 
           <View style={styles.switchRow}>
             <Text style={styles.switchText}>Already have an account?</Text>
-            <Pressable onPress={() => router.replace("/(auth)/login")} hitSlop={8}>
+            <Pressable
+              onPress={() => router.replace("/(auth)/login")}
+              hitSlop={8}
+            >
               <Text style={styles.switchLink}> Sign in</Text>
             </Pressable>
           </View>
@@ -293,175 +286,224 @@ export default function SignupScreen() {
   );
 }
 
-function InputField({
-  value,
-  onChangeText,
-  placeholder,
-  icon,
-  focused,
-  onFocus,
-  onBlur,
-  keyboardType,
-  autoCapitalize,
-  autoCorrect,
-  secureTextEntry,
-}: any) {
-  return (
-    <View style={[styles.inputWrap, focused && styles.inputWrapFocused]}>
-      {focused && (
-        <LinearGradient
-          colors={[GREEN, BLUE]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.inputBorderGradient}
-        />
-      )}
-      <View style={styles.inputInner}>
-        <Text style={styles.inputIcon}>{icon}</Text>
-        <TextInput
-          value={value}
-          onChangeText={onChangeText}
-          onFocus={onFocus}
-          onBlur={onBlur}
-          placeholder={placeholder}
-          placeholderTextColor={MUTED}
-          keyboardType={keyboardType}
-          autoCapitalize={autoCapitalize}
-          autoCorrect={autoCorrect}
-          secureTextEntry={secureTextEntry}
-          style={styles.input}
-        />
-      </View>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: BG },
-  orb: { position: "absolute", borderRadius: 999, opacity: 0.18 },
-  orbGreen: { width: 280, height: 280, backgroundColor: GREEN, top: -60, left: -80 },
-  orbBlue: { width: 240, height: 240, backgroundColor: BLUE, bottom: 40, right: -60 },
-  scroll: { paddingHorizontal: 24, alignItems: "stretch" },
-  brandSection: { alignItems: "center", marginBottom: 28 },
-  logoWrapper: {
-    width: 90,
-    height: 90,
+  root: {
+    flex: 1,
+    backgroundColor: WHITE,
+  },
+  hero: {
+    paddingTop: 64,
+    paddingBottom: 44,
+    alignItems: "center",
+    gap: 8,
+  },
+  logoBadge: {
+    width: 96,
+    height: 96,
+    borderRadius: 28,
+    backgroundColor: WHITE,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 10,
+    marginBottom: 4,
   },
-  logo: { width: 90, height: 90 },
-  brandName: { fontSize: 28, fontFamily: "Inter_700Bold", color: WHITE, letterSpacing: -0.5 },
-  brandTagline: { fontSize: 13, fontFamily: "Inter_400Regular", color: MUTED, marginTop: 4 },
-  card: {
-    backgroundColor: CARD,
+  logo: {
+    width: 72,
+    height: 72,
+  },
+  appName: {
+    fontSize: 28,
+    fontFamily: "Inter_700Bold",
+    color: WHITE,
+    letterSpacing: -0.5,
+  },
+  tagline: {
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    color: "rgba(255,255,255,0.6)",
+  },
+  sheet: {
+    backgroundColor: WHITE,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    marginTop: -24,
+    flex: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  scroll: {
+    paddingHorizontal: 28,
+    paddingTop: 32,
+    gap: 16,
+  },
+  successContent: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+    gap: 16,
+  },
+  successIconBox: {
+    width: 80,
+    height: 80,
     borderRadius: 24,
-    borderWidth: 1,
-    borderColor: BORDER,
-    padding: 24,
-    overflow: "hidden",
-    gap: 14,
+    backgroundColor: "#F0FFF4",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 4,
   },
-  cardTopBorder: { position: "absolute", top: 0, left: 0, right: 0, height: 3 },
-  cardTitle: { fontSize: 20, fontFamily: "Inter_700Bold", color: WHITE, marginTop: 4 },
-  cardSub: { fontSize: 12, fontFamily: "Inter_400Regular", color: MUTED, marginTop: -6 },
-  fieldGroup: { gap: 6 },
-  label: { fontSize: 10, fontFamily: "Inter_600SemiBold", color: MUTED, letterSpacing: 1 },
-  inputWrap: {
+  title: {
+    fontSize: 24,
+    fontFamily: "Inter_700Bold",
+    color: "#0F172A",
+    marginBottom: 2,
+  },
+  subtitle: {
+    fontSize: 14,
+    fontFamily: "Inter_400Regular",
+    color: LABEL,
+    marginTop: -8,
+    marginBottom: 4,
+    lineHeight: 20,
+  },
+  field: {
+    gap: 6,
+  },
+  label: {
+    fontSize: 11,
+    fontFamily: "Inter_600SemiBold",
+    color: LABEL,
+    letterSpacing: 0.8,
+  },
+  inputBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    height: 52,
     borderRadius: 14,
     borderWidth: 1.5,
     borderColor: BORDER,
-    overflow: "hidden",
-    backgroundColor: INPUT_BG,
-  },
-  inputWrapFocused: { borderColor: "transparent" },
-  inputBorderGradient: {
-    position: "absolute",
-    top: 0, left: 0, right: 0, bottom: 0,
-    margin: -1.5,
-    borderRadius: 14,
-    zIndex: 0,
-  },
-  inputInner: {
-    flexDirection: "row",
-    alignItems: "center",
-    height: 50,
+    backgroundColor: "#F8FAFC",
     paddingHorizontal: 14,
     gap: 10,
-    backgroundColor: INPUT_BG,
-    borderRadius: 13,
-    margin: 1.5,
-    zIndex: 1,
   },
-  inputIcon: { fontSize: 14 },
-  input: { flex: 1, fontSize: 15, fontFamily: "Inter_400Regular", color: WHITE },
+  inputBoxFocused: {
+    borderColor: BLUE,
+    backgroundColor: WHITE,
+    shadowColor: BLUE,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  fieldIcon: {
+    fontSize: 14,
+  },
+  input: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: "Inter_400Regular",
+    color: "#0F172A",
+  },
   errorBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "rgba(255,71,87,0.12)",
+    backgroundColor: "#FEF2F2",
     borderWidth: 1,
-    borderColor: "rgba(255,71,87,0.3)",
+    borderColor: "#FECACA",
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
-  errorText: { flex: 1, fontSize: 13, fontFamily: "Inter_400Regular", color: "#FF4757" },
-  signInBtn: {
+  errorText: {
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    color: ERROR_RED,
+  },
+  primaryBtn: {
     height: 54,
-    borderRadius: 15,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: GREEN,
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
     elevation: 8,
   },
-  signInBtnText: { color: WHITE, fontSize: 16, fontFamily: "Inter_700Bold", letterSpacing: 0.3 },
-  divider: { flexDirection: "row", alignItems: "center", gap: 10 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: BORDER },
-  dividerText: { fontSize: 11, fontFamily: "Inter_400Regular", color: MUTED },
+  primaryBtnText: {
+    color: WHITE,
+    fontSize: 16,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: 0.3,
+  },
+  divider: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: BORDER,
+  },
+  dividerText: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    color: MUTED,
+  },
   googleBtn: {
-    height: 50,
+    height: 52,
     borderRadius: 14,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: BORDER,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: WHITE,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
   },
   googleIconBox: {
-    width: 28, height: 28, borderRadius: 8,
-    backgroundColor: WHITE, alignItems: "center", justifyContent: "center",
-  },
-  googleG: { fontSize: 15, fontFamily: "Inter_700Bold", color: "#4285F4" },
-  googleBtnText: { fontSize: 14, fontFamily: "Inter_500Medium", color: WHITE },
-  switchRow: { flexDirection: "row", justifyContent: "center", marginTop: 24 },
-  switchText: { fontSize: 14, fontFamily: "Inter_400Regular", color: MUTED },
-  switchLink: { fontSize: 14, fontFamily: "Inter_700Bold", color: GREEN },
-  successContainer: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
-  successCard: {
-    backgroundColor: CARD,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: BORDER,
-    padding: 32,
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: "#F1F5F9",
     alignItems: "center",
-    gap: 14,
-    overflow: "hidden",
-    width: "100%",
-    maxWidth: 380,
+    justifyContent: "center",
   },
-  successIconBox: {
-    width: 80, height: 80, borderRadius: 24,
-    alignItems: "center", justifyContent: "center",
+  googleG: {
+    fontSize: 15,
+    fontFamily: "Inter_700Bold",
+    color: "#4285F4",
   },
-  successTitle: { fontSize: 24, fontFamily: "Inter_700Bold", color: WHITE },
-  successSub: {
-    fontSize: 14, fontFamily: "Inter_400Regular", color: MUTED,
-    textAlign: "center", lineHeight: 20,
+  googleText: {
+    fontSize: 15,
+    fontFamily: "Inter_500Medium",
+    color: "#0F172A",
+  },
+  switchRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    marginTop: 4,
+    paddingBottom: 8,
+  },
+  switchText: {
+    fontSize: 14,
+    fontFamily: "Inter_400Regular",
+    color: LABEL,
+  },
+  switchLink: {
+    fontSize: 14,
+    fontFamily: "Inter_700Bold",
+    color: GREEN,
   },
 });
