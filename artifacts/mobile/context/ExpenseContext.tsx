@@ -48,11 +48,7 @@ export const DEFAULT_CATEGORIES: CategoryInfo[] = [
   { name: "Miscellaneous", icon: "grid-outline", color: "#636E72" },
 ];
 
-const DEFAULT_QUICK_TEMPLATES: QuickTemplate[] = [
-  { id: "qt_coffee", label: "Coffee", category: "Coffee", amount: 120 },
-  { id: "qt_lunch", label: "Lunch", category: "Food", amount: 250 },
-  { id: "qt_cab", label: "Cab", category: "Transport", amount: 300 },
-];
+const DEFAULT_QUICK_TEMPLATES: QuickTemplate[] = [];
 
 const LOCAL_KEYS = {
   QUICK_TEMPLATES: "@exptrack_quick_templates",

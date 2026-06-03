@@ -30,9 +30,9 @@ function NativeTabLayout() {
         <Icon sf={{ default: "calendar", selected: "calendar.fill" }} />
         <Label>Calendar</Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="search" role="search">
-        <Icon sf={{ default: "magnifyingglass", selected: "magnifyingglass" }} />
-        <Label>Search</Label>
+      <NativeTabs.Trigger name="records">
+        <Icon sf={{ default: "list.bullet.rectangle", selected: "list.bullet.rectangle.fill" }} />
+        <Label>Records</Label>
       </NativeTabs.Trigger>
     </NativeTabs>
   );
@@ -125,14 +125,14 @@ function ClassicTabLayout() {
         }}
       />
       <Tabs.Screen
-        name="search"
+        name="records"
         options={{
-          title: "Search",
+          title: "Records",
           tabBarIcon: ({ color }) =>
             isIOS ? (
-              <SymbolView name="magnifyingglass" tintColor={color} size={24} />
+              <SymbolView name="list.bullet.rectangle" tintColor={color} size={24} />
             ) : (
-              <Feather name="search" size={22} color={color} />
+              <Feather name="list" size={22} color={color} />
             ),
         }}
       />
