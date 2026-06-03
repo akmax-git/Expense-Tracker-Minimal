@@ -70,14 +70,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       password: string,
       name: string
     ): Promise<string | null> => {
-      const { error } = await supabase.auth.signUp({
+      const { error: signUpError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
         options: {
           data: { full_name: name },
         },
       });
-      return error?.message ?? null;
+      if (signUpError) return signUpError.message;
+
+      // Auto sign-in immediately (works when email confirmation is disabled in Supabase)
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+      return signInError?.message ?? null;
     },
     []
   );

@@ -37,7 +37,6 @@ export default function SignupScreen() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
 
   const [nameFocused, setNameFocused] = useState(false);
   const [emailFocused, setEmailFocused] = useState(false);
@@ -57,7 +56,7 @@ export default function SignupScreen() {
     const err = await signUpWithEmail(email, password, name);
     setLoading(false);
     if (err) setError(err);
-    else setSuccess(true);
+    // on success: AuthContext onAuthStateChange fires and root layout redirects automatically
   }
 
   async function handleGoogle() {
@@ -66,51 +65,6 @@ export default function SignupScreen() {
     const err = await signInWithGoogle();
     setGoogleLoading(false);
     if (err) setError(err);
-  }
-
-  if (success) {
-    return (
-      <View style={styles.root}>
-        <LinearGradient
-          colors={["#0A1628", "#0F1E38", "#07111E"]}
-          style={styles.hero}
-        >
-          <View style={styles.logoBadge}>
-            <Image
-              source={require("@/assets/images/lifeeasy-logo-nobg.png")}
-              style={styles.logo}
-              resizeMode="contain"
-            />
-          </View>
-          <Text style={styles.appName}>Lifeeasy</Text>
-        </LinearGradient>
-        <View style={[styles.sheet, { flex: 1 }]}>
-          <View style={styles.successContent}>
-            <View style={styles.successIconBox}>
-              <Text style={{ fontSize: 38 }}>🎉</Text>
-            </View>
-            <Text style={styles.title}>Account created!</Text>
-            <Text style={[styles.subtitle, { textAlign: "center" }]}>
-              Check your email for a confirmation link, then sign in to start
-              tracking your finances.
-            </Text>
-            <Pressable
-              onPress={() => router.replace("/(auth)/login")}
-              style={{ width: "100%" }}
-            >
-              <LinearGradient
-                colors={[GREEN, "#00A844", BLUE_DARK]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.primaryBtn}
-              >
-                <Text style={styles.primaryBtnText}>Go to Sign In →</Text>
-              </LinearGradient>
-            </Pressable>
-          </View>
-        </View>
-      </View>
-    );
   }
 
   return (
