@@ -17,6 +17,7 @@ interface AuthContextValue {
   user: User | null;
   session: Session | null;
   isLoading: boolean;
+  isPasswordRecovery: boolean;
   signInWithEmail: (email: string, password: string) => Promise<string | null>;
   signUpWithEmail: (
     email: string,
@@ -25,6 +26,8 @@ interface AuthContextValue {
   ) => Promise<string | null>;
   signInWithGoogle: () => Promise<string | null>;
   signOut: () => Promise<void>;
+  resetPasswordForEmail: (email: string) => Promise<string | null>;
+  updatePassword: (newPassword: string) => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -33,6 +36,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
 
   useEffect(() => {
     // Get initial session
@@ -44,9 +48,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      (event, session) => {
         setSession(session);
         setUser(session?.user ?? null);
+        if (event === "PASSWORD_RECOVERY") {
+          setIsPasswordRecovery(true);
+        } else if (event === "USER_UPDATED" || event === "SIGNED_OUT") {
+          setIsPasswordRecovery(false);
+        }
       }
     );
 
@@ -136,16 +145,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await supabase.auth.signOut();
   }, []);
 
+  const resetPasswordForEmail = useCallback(
+    async (email: string): Promise<string | null> => {
+      const redirectTo = Linking.createURL("/reset-password");
+      const { error } = await supabase.auth.resetPasswordForEmail(
+        email.trim(),
+        { redirectTo }
+      );
+      return error?.message ?? null;
+    },
+    []
+  );
+
+  const updatePassword = useCallback(
+    async (newPassword: string): Promise<string | null> => {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+      if (!error) setIsPasswordRecovery(false);
+      return error?.message ?? null;
+    },
+    []
+  );
+
   return (
     <AuthContext.Provider
       value={{
         user,
         session,
         isLoading,
+        isPasswordRecovery,
         signInWithEmail,
         signUpWithEmail,
         signInWithGoogle,
         signOut,
+        resetPasswordForEmail,
+        updatePassword,
       }}
     >
       {children}

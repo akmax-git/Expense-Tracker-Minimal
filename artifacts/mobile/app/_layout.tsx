@@ -24,17 +24,21 @@ SplashScreen.preventAutoHideAsync();
 const queryClient = new QueryClient();
 
 function RootLayoutNav() {
-  const { session, isLoading } = useAuth();
+  const { session, isLoading, isPasswordRecovery } = useAuth();
   const colors = useColors();
 
   useEffect(() => {
     if (isLoading) return;
+    if (isPasswordRecovery) {
+      router.replace("/reset-password");
+      return;
+    }
     if (!session) {
       router.replace("/(auth)/login");
     } else {
       router.replace("/(tabs)");
     }
-  }, [session, isLoading]);
+  }, [session, isLoading, isPasswordRecovery]);
 
   if (isLoading) {
     return (
@@ -55,6 +59,7 @@ function RootLayoutNav() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="(auth)" />
+      <Stack.Screen name="reset-password" />
     </Stack>
   );
 }
