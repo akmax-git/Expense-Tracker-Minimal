@@ -90,7 +90,7 @@ export default function ForgotPasswordScreen() {
                 We've sent a password reset link to{" "}
                 <Text style={{ fontFamily: "Inter_600SemiBold" }}>{email}</Text>
                 .{"\n\n"}Tap the link in the email to set a new password. Check
-                your spam folder if you don't see it.
+                your spam/junk folder if you don't see it within a few minutes.
               </Text>
               <Pressable
                 onPress={() => router.replace("/(auth)/login")}

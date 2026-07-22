@@ -10,6 +10,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     storage: Platform.OS !== "web" ? AsyncStorage : undefined,
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: false,
+    // Web: pick up recovery / OAuth tokens from the URL hash.
+    // Native: handled manually via Linking in AuthContext.
+    detectSessionInUrl: Platform.OS === "web",
   },
 });

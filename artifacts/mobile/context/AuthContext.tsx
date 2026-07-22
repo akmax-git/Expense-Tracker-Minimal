@@ -8,7 +8,12 @@ import React, {
   useEffect,
   useState,
 } from "react";
+import { Platform } from "react-native";
 
+import {
+  getAuthRedirectUrl,
+  parseAuthCallbackUrl,
+} from "@/lib/authRedirect";
 import { supabase } from "@/lib/supabase";
 
 WebBrowser.maybeCompleteAuthSession();
@@ -38,6 +43,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
 
+  const createSessionFromUrl = useCallback(async (url: string) => {
+    const { accessToken, refreshToken, type, code } = parseAuthCallbackUrl(url);
+
+    if (code) {
+      const { error } = await supabase.auth.exchangeCodeForSession(code);
+      if (error) return error.message;
+      // PKCE recovery still needs the recovery flag for routing
+      if (type === "recovery" || url.includes("type=recovery")) {
+        setIsPasswordRecovery(true);
+      }
+      return null;
+    }
+
+    if (accessToken && refreshToken) {
+      const { error } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
+      if (error) return error.message;
+      // setSession often emits SIGNED_IN, not PASSWORD_RECOVERY — set flag manually
+      if (type === "recovery") {
+        setIsPasswordRecovery(true);
+      }
+      return null;
+    }
+
+    return null;
+  }, []);
+
   useEffect(() => {
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -59,8 +93,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     );
 
-    return () => subscription.unsubscribe();
-  }, []);
+    // Native + cold-start: apply tokens from password-reset / OAuth deep links
+    const handleUrl = (url: string | null) => {
+      if (!url) return;
+      void createSessionFromUrl(url);
+    };
+
+    Linking.getInitialURL().then(handleUrl);
+    const linkSub = Linking.addEventListener("url", ({ url }) => handleUrl(url));
+
+    // Web fallback when detectSessionInUrl already ran or hash is still present
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      const href = window.location.href;
+      if (
+        href.includes("access_token=") ||
+        href.includes("type=recovery") ||
+        href.includes("code=")
+      ) {
+        void createSessionFromUrl(href);
+      }
+    }
+
+    return () => {
+      subscription.unsubscribe();
+      linkSub.remove();
+    };
+  }, [createSessionFromUrl]);
 
   const signInWithEmail = useCallback(
     async (email: string, password: string): Promise<string | null> => {
@@ -100,7 +158,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = useCallback(async (): Promise<string | null> => {
     try {
-      const redirectTo = Linking.createURL("/auth/callback");
+      const redirectTo = getAuthRedirectUrl("/auth/callback");
 
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
@@ -119,18 +177,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       );
 
       if (result.type === "success" && result.url) {
-        const url = new URL(result.url);
-        const params = new URLSearchParams(url.hash.replace("#", "?"));
-        const accessToken = params.get("access_token");
-        const refreshToken = params.get("refresh_token");
-
-        if (accessToken && refreshToken) {
-          const { error: setErr } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-          });
-          if (setErr) return setErr.message;
-        }
+        const err = await createSessionFromUrl(result.url);
+        if (err) return err;
       } else if (result.type === "cancel") {
         return null; // User cancelled — not an error
       }
@@ -139,7 +187,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (err: any) {
       return err?.message ?? "Google sign-in failed";
     }
-  }, []);
+  }, [createSessionFromUrl]);
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
@@ -147,9 +195,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const resetPasswordForEmail = useCallback(
     async (email: string): Promise<string | null> => {
-      const redirectTo = Linking.createURL("/reset-password");
+      const redirectTo = getAuthRedirectUrl("/reset-password");
+      if (__DEV__) {
+        console.log("[auth] password reset redirectTo:", redirectTo);
+      }
       const { error } = await supabase.auth.resetPasswordForEmail(
-        email.trim(),
+        email.trim().toLowerCase(),
         { redirectTo }
       );
       return error?.message ?? null;
