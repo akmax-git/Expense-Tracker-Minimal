@@ -9,6 +9,7 @@ import { Platform, StyleSheet, View, useColorScheme } from "react-native";
 
 import { useAuth } from "@/context/AuthContext";
 import { ExpenseProvider } from "@/context/ExpenseContext";
+import { useManager } from "@/context/ManagerContext";
 import { useColors } from "@/hooks/useColors";
 
 function NativeTabLayout() {
@@ -142,11 +143,14 @@ function ClassicTabLayout() {
 
 export default function TabLayout() {
   const { user } = useAuth();
+  const { viewingAs } = useManager();
   const inner = isLiquidGlassAvailable() ? (
     <NativeTabLayout />
   ) : (
     <ClassicTabLayout />
   );
   if (!user) return null;
-  return <ExpenseProvider userId={user.id}>{inner}</ExpenseProvider>;
+  // When in manager mode, load the managed user's expenses instead of own
+  const effectiveUserId = viewingAs ?? user.id;
+  return <ExpenseProvider userId={effectiveUserId}>{inner}</ExpenseProvider>;
 }

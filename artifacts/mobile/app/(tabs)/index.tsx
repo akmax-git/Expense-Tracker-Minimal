@@ -3,16 +3,12 @@ import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
-  Alert,
   Image,
-  KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -25,6 +21,8 @@ import {
   formatMonth,
   useExpenses,
 } from "@/context/ExpenseContext";
+import { useManager } from "@/context/ManagerContext";
+import { SettingsModal } from "@/components/SettingsModal";
 import { useColors } from "@/hooks/useColors";
 
 function monthOffset(base: string, offset: number): string {
@@ -42,7 +40,9 @@ function getDaysRemainingInMonth(): number {
 export default function DashboardScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
+  const { viewingAs, viewingAsEmail } = useManager();
+  const isManagerMode = viewingAs !== null;
   const {
     getMonthExpenses,
     getMonthBudget,
@@ -55,8 +55,7 @@ export default function DashboardScreen() {
   } = useExpenses();
 
   const [month, setMonth] = useState(currentMonth);
-  const [budgetModalVisible, setBudgetModalVisible] = useState(false);
-  const [budgetInput, setBudgetInput] = useState("");
+  const [settingsModalVisible, setSettingsModalVisible] = useState(false);
 
   const isCurrentMonth = month === currentMonth();
   const budget = getMonthBudget(month);
@@ -75,17 +74,6 @@ export default function DashboardScreen() {
   }, [monthExpenses]);
 
   const recentExpenses = monthExpenses.slice(0, 8);
-
-  const saveBudget = () => {
-    const val = parseFloat(budgetInput.replace(/,/g, ""));
-    if (!isNaN(val) && val > 0) {
-      setMonthBudget(month, val);
-      setBudgetModalVisible(false);
-      setBudgetInput("");
-    } else {
-      Alert.alert("Invalid amount", "Please enter a valid budget.");
-    }
-  };
 
   const handleQuickAdd = async (template: (typeof quickTemplates)[0]) => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -141,28 +129,29 @@ export default function DashboardScreen() {
             </Pressable>
           )}
           <Pressable
-            onPress={() => {
-              setBudgetInput(String(budget));
-              setBudgetModalVisible(true);
-            }}
+            onPress={() => setSettingsModalVisible(true)}
             hitSlop={12}
-            style={{ marginRight: 8 }}
+            style={{ marginRight: 4 }}
           >
             <Ionicons name="settings-outline" size={22} color={colors.mutedForeground} />
           </Pressable>
-          <Pressable
-            onPress={() =>
-              Alert.alert("Sign out", "Are you sure you want to sign out?", [
-                { text: "Cancel", style: "cancel" },
-                { text: "Sign out", style: "destructive", onPress: signOut },
-              ])
-            }
-            hitSlop={12}
-          >
-            <Ionicons name="log-out-outline" size={22} color={colors.mutedForeground} />
-          </Pressable>
         </View>
       </View>
+
+      {/* Manager mode banner */}
+      {isManagerMode && (
+        <View
+          style={[
+            styles.managerBanner,
+            { backgroundColor: colors.primary + "15", borderColor: colors.primary + "30" },
+          ]}
+        >
+          <Ionicons name="eye-outline" size={15} color={colors.primary} />
+          <Text style={[styles.managerBannerText, { color: colors.primary }]}>
+            Viewing {viewingAsEmail ?? "manager account"} — read only
+          </Text>
+        </View>
+      )}
 
       <ScrollView
         contentContainerStyle={[
@@ -224,8 +213,8 @@ export default function DashboardScreen() {
           </View>
         )}
 
-        {/* Quick add */}
-        {isCurrentMonth && quickTemplates.length > 0 && (
+        {/* Quick add — hidden in manager (read-only) mode */}
+        {isCurrentMonth && !isManagerMode && quickTemplates.length > 0 && (
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
               Quick Add
@@ -295,12 +284,12 @@ export default function DashboardScreen() {
               key={exp.id}
               expense={exp}
               category={getCategoryInfo(exp.category)}
-              onDelete={deleteExpense}
+              onDelete={isManagerMode ? undefined : deleteExpense}
             />
           ))}
           {monthExpenses.length > 8 && (
             <Pressable
-              onPress={() => router.push("/(tabs)/search")}
+              onPress={() => router.push("/(tabs)/records")}
               style={[styles.seeAll, { borderColor: colors.border }]}
             >
               <Text style={[styles.seeAllText, { color: colors.primary }]}>
@@ -311,66 +300,15 @@ export default function DashboardScreen() {
         </View>
       </ScrollView>
 
-      {/* Budget modal */}
-      <Modal
-        visible={budgetModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setBudgetModalVisible(false)}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={styles.modalOverlay}
-        >
-          <View
-            style={[
-              styles.modalCard,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            <Text style={[styles.modalTitle, { color: colors.foreground }]}>
-              Set Monthly Budget
-            </Text>
-            <Text style={[styles.modalSub, { color: colors.mutedForeground }]}>
-              {formatMonth(month)}
-            </Text>
-            <TextInput
-              value={budgetInput}
-              onChangeText={setBudgetInput}
-              keyboardType="numeric"
-              placeholder="30000"
-              placeholderTextColor={colors.mutedForeground}
-              style={[
-                styles.modalInput,
-                {
-                  color: colors.foreground,
-                  backgroundColor: colors.input,
-                  borderColor: colors.border,
-                },
-              ]}
-              autoFocus
-            />
-            <View style={styles.modalActions}>
-              <Pressable
-                onPress={() => setBudgetModalVisible(false)}
-                style={[styles.modalBtn, { backgroundColor: colors.muted }]}
-              >
-                <Text style={[styles.modalBtnText, { color: colors.mutedForeground }]}>
-                  Cancel
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={saveBudget}
-                style={[styles.modalBtn, { backgroundColor: colors.primary }]}
-              >
-                <Text style={[styles.modalBtnText, { color: colors.primaryForeground }]}>
-                  Save
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+      <SettingsModal
+        visible={settingsModalVisible}
+        onClose={() => setSettingsModalVisible(false)}
+        currentBudget={budget}
+        onSaveBudget={(val) => {
+          setMonthBudget(month, val);
+          setSettingsModalVisible(false);
+        }}
+      />
     </View>
   );
 }
@@ -527,50 +465,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: "Inter_500Medium",
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 24,
-  },
-  modalCard: {
-    width: "100%",
-    borderRadius: 20,
-    borderWidth: 1,
-    padding: 24,
-    gap: 12,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontFamily: "Inter_700Bold",
-  },
-  modalSub: {
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
-  },
-  modalInput: {
-    height: 52,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    fontSize: 20,
-    fontFamily: "Inter_600SemiBold",
-  },
-  modalActions: {
+  managerBanner: {
     flexDirection: "row",
-    gap: 10,
-    marginTop: 4,
-  },
-  modalBtn: {
-    flex: 1,
-    height: 46,
-    borderRadius: 12,
     alignItems: "center",
-    justifyContent: "center",
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  modalBtnText: {
-    fontSize: 15,
-    fontFamily: "Inter_600SemiBold",
+  managerBannerText: {
+    fontSize: 13,
+    fontFamily: "Inter_500Medium",
   },
 });
