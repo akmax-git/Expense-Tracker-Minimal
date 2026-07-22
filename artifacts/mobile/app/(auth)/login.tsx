@@ -1,6 +1,6 @@
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
-import React, { useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -29,6 +29,7 @@ const ERROR_RED = "#EF4444";
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
   const { signInWithEmail, signInWithGoogle } = useAuth();
+  const params = useLocalSearchParams<{ email?: string }>();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -38,6 +39,11 @@ export default function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const [emailFocused, setEmailFocused] = useState(false);
   const [passFocused, setPassFocused] = useState(false);
+
+  useEffect(() => {
+    const prefill = typeof params.email === "string" ? params.email.trim() : "";
+    if (prefill) setEmail(prefill);
+  }, [params.email]);
 
   async function handleEmailLogin() {
     if (!email.trim() || !password) {

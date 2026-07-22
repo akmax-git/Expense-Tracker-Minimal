@@ -1,12 +1,15 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
   createContext,
   useCallback,
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
+import { getAuthRedirectUrl } from "@/lib/authRedirect";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "./AuthContext";
 
@@ -52,6 +55,12 @@ export interface ManagerGrant {
   createdAt: string;
 }
 
+export interface GrantAccessResult {
+  error: string | null;
+  /** True when a magic-link / invite email was queued by Supabase Auth */
+  emailSent: boolean;
+}
+
 interface ManagerContextValue {
   /** Grants this user (as owner) has given to managers */
   myGrants: ManagerGrant[];
@@ -73,7 +82,7 @@ interface ManagerContextValue {
   grantAccess: (
     managerEmail: string,
     permission?: ManagerPermission
-  ) => Promise<string | null>;
+  ) => Promise<GrantAccessResult>;
   updatePermission: (
     grantId: string,
     permission: ManagerPermission
@@ -83,6 +92,13 @@ interface ManagerContextValue {
 }
 
 const ManagerContext = createContext<ManagerContextValue | null>(null);
+
+function viewingKey(userId: string) {
+  return `@exptrack_viewing_as_${userId}`;
+}
+function exitedKey(userId: string) {
+  return `@exptrack_manager_exited_${userId}`;
+}
 
 function normalizePermission(value: unknown): ManagerPermission {
   if (value === "edit" || value === "full" || value === "read") return value;
@@ -109,13 +125,81 @@ export function ManagerProvider({ children }: { children: React.ReactNode }) {
   const [viewingAs, setViewingAsId] = useState<string | null>(null);
   const [viewingAsEmail, setViewingAsEmailState] = useState<string | null>(null);
   const [isLoadingGrants, setIsLoadingGrants] = useState(false);
+  const autoOpenedRef = useRef(false);
 
   const setViewingAs = useCallback(
     (ownerUserId: string | null, ownerEmail: string | null) => {
       setViewingAsId(ownerUserId);
       setViewingAsEmailState(ownerEmail);
+      if (!user) return;
+      void (async () => {
+        try {
+          if (ownerUserId) {
+            await AsyncStorage.setItem(
+              viewingKey(user.id),
+              JSON.stringify({ ownerUserId, ownerEmail })
+            );
+            await AsyncStorage.removeItem(exitedKey(user.id));
+          } else {
+            await AsyncStorage.removeItem(viewingKey(user.id));
+            await AsyncStorage.setItem(exitedKey(user.id), "1");
+          }
+        } catch {
+          /* ignore storage errors */
+        }
+      })();
     },
-    []
+    [user]
+  );
+
+  const applyAutoView = useCallback(
+    async (grants: ManagerGrant[]) => {
+      if (!user || grants.length === 0) return;
+      if (autoOpenedRef.current) return;
+
+      try {
+        const exited = await AsyncStorage.getItem(exitedKey(user.id));
+        if (exited === "1") {
+          autoOpenedRef.current = true;
+          return;
+        }
+
+        const raw = await AsyncStorage.getItem(viewingKey(user.id));
+        if (raw) {
+          const saved = JSON.parse(raw) as {
+            ownerUserId?: string;
+            ownerEmail?: string | null;
+          };
+          const match = grants.find((g) => g.ownerUserId === saved.ownerUserId);
+          if (match) {
+            setViewingAsId(match.ownerUserId);
+            setViewingAsEmailState(match.ownerEmail);
+            autoOpenedRef.current = true;
+            return;
+          }
+        }
+      } catch {
+        /* fall through to first grant */
+      }
+
+      // Default: open the first shared account so managers see expenses immediately
+      const first = grants[0];
+      setViewingAsId(first.ownerUserId);
+      setViewingAsEmailState(first.ownerEmail);
+      try {
+        await AsyncStorage.setItem(
+          viewingKey(user.id),
+          JSON.stringify({
+            ownerUserId: first.ownerUserId,
+            ownerEmail: first.ownerEmail,
+          })
+        );
+      } catch {
+        /* ignore */
+      }
+      autoOpenedRef.current = true;
+    },
+    [user]
   );
 
   const reload = useCallback(async () => {
@@ -148,6 +232,8 @@ export function ManagerProvider({ children }: { children: React.ReactNode }) {
         .eq("manager_email", email)
         .is("manager_user_id", null);
 
+      let grants: ManagerGrant[] = [];
+
       // Activate any pending grants for my email
       if (pendingRows && pendingRows.length > 0) {
         await supabase
@@ -156,23 +242,26 @@ export function ManagerProvider({ children }: { children: React.ReactNode }) {
           .eq("manager_email", email)
           .is("manager_user_id", null);
 
-        // Reload manager grants after activation
         const { data: refreshed } = await supabase
           .from("manager_access")
           .select("*")
           .eq("manager_user_id", user.id)
           .eq("status", "active");
 
-        if (refreshed) setManagerOf(refreshed.map(mapRow));
+        grants = (refreshed ?? []).map(mapRow);
+        setManagerOf(grants);
       } else if (!manErr && managerRows) {
-        setManagerOf(managerRows.map(mapRow));
+        grants = managerRows.map(mapRow);
+        setManagerOf(grants);
       }
+
+      await applyAutoView(grants);
     } catch {
       // manager_access table may not exist yet — silently skip
     } finally {
       setIsLoadingGrants(false);
     }
-  }, [user]);
+  }, [user, applyAutoView]);
 
   useEffect(() => {
     if (!user) {
@@ -180,8 +269,10 @@ export function ManagerProvider({ children }: { children: React.ReactNode }) {
       setManagerOf([]);
       setViewingAsId(null);
       setViewingAsEmailState(null);
+      autoOpenedRef.current = false;
       return;
     }
+    autoOpenedRef.current = false;
     reload();
   }, [user?.id]);
 
@@ -189,12 +280,12 @@ export function ManagerProvider({ children }: { children: React.ReactNode }) {
     async (
       managerEmail: string,
       permission: ManagerPermission = "read"
-    ): Promise<string | null> => {
-      if (!user) return "Not signed in";
+    ): Promise<GrantAccessResult> => {
+      if (!user) return { error: "Not signed in", emailSent: false };
       const email = managerEmail.trim().toLowerCase();
-      if (!email) return "Please enter an email address";
+      if (!email) return { error: "Please enter an email address", emailSent: false };
       if (email === (user.email ?? "").trim().toLowerCase()) {
-        return "You cannot grant access to yourself";
+        return { error: "You cannot grant access to yourself", emailSent: false };
       }
 
       const { error } = await supabase.from("manager_access").insert({
@@ -206,8 +297,9 @@ export function ManagerProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) {
-        if (error.code === "23505") return "Access already granted to this email";
-        // Column may not exist yet if migration not run — retry without permission
+        if (error.code === "23505") {
+          return { error: "Access already granted to this email", emailSent: false };
+        }
         if (error.message?.toLowerCase().includes("permission")) {
           const { error: fallbackErr } = await supabase
             .from("manager_access")
@@ -219,18 +311,35 @@ export function ManagerProvider({ children }: { children: React.ReactNode }) {
             });
           if (fallbackErr) {
             if (fallbackErr.code === "23505") {
-              return "Access already granted to this email";
+              return {
+                error: "Access already granted to this email",
+                emailSent: false,
+              };
             }
-            return fallbackErr.message;
+            return { error: fallbackErr.message, emailSent: false };
           }
-          await reload();
-          return null;
+        } else {
+          return { error: error.message, emailSent: false };
         }
-        return error.message;
+      }
+
+      // Send magic-link invite via Supabase Auth email (no separate mailer needed)
+      let emailSent = false;
+      try {
+        const { error: otpErr } = await supabase.auth.signInWithOtp({
+          email,
+          options: {
+            shouldCreateUser: true,
+            emailRedirectTo: getAuthRedirectUrl("/"),
+          },
+        });
+        emailSent = !otpErr;
+      } catch {
+        emailSent = false;
       }
 
       await reload();
-      return null;
+      return { error: null, emailSent };
     },
     [user, reload]
   );
@@ -263,16 +372,14 @@ export function ManagerProvider({ children }: { children: React.ReactNode }) {
         .eq("id", grantId)
         .eq("owner_user_id", user.id);
 
-      // If currently viewing this grant, exit manager mode
       const grant = myGrants.find((g) => g.id === grantId);
       if (grant && viewingAs === grant.ownerUserId) {
-        setViewingAsId(null);
-        setViewingAsEmailState(null);
+        setViewingAs(null, null);
       }
 
       await reload();
     },
-    [user, myGrants, viewingAs, reload]
+    [user, myGrants, viewingAs, reload, setViewingAs]
   );
 
   const activeGrant = useMemo(() => {
@@ -281,10 +388,11 @@ export function ManagerProvider({ children }: { children: React.ReactNode }) {
   }, [viewingAs, managerOf]);
 
   const isManagerMode = viewingAs !== null;
-  // Own account always has full control; manager mode respects grant permission
-  const canEdit = !isManagerMode || activeGrant?.permission === "edit" || activeGrant?.permission === "full";
-  const canManageBudget =
-    !isManagerMode || activeGrant?.permission === "full";
+  const canEdit =
+    !isManagerMode ||
+    activeGrant?.permission === "edit" ||
+    activeGrant?.permission === "full";
+  const canManageBudget = !isManagerMode || activeGrant?.permission === "full";
 
   return (
     <ManagerContext.Provider

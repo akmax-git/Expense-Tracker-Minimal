@@ -167,20 +167,27 @@ export function SettingsModal({ visible, onClose, currentBudget, onSaveBudget }:
     const email = grantEmailInput.trim().toLowerCase();
     setIsGranting(true);
     setGrantError(null);
-    const err = await grantAccess(email, grantPermission);
+    const { error, emailSent } = await grantAccess(email, grantPermission);
     setIsGranting(false);
-    if (err) {
-      setGrantError(err);
+    if (error) {
+      setGrantError(error);
     } else {
       const level = permissionLabel(grantPermission);
       setGrantEmailInput("");
       setGrantPermission("read");
       setShowGrantInput(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      notify(
-        "Manager invited",
-        `Access level: ${level}.\n\nNo email is sent automatically.\n\nAsk ${email} to open this app and sign up / sign in with that exact email. Once they do, access becomes Active.`
-      );
+      if (emailSent) {
+        notify(
+          "Invite email sent",
+          `Access level: ${level}.\n\nAn email was sent to ${email} with a sign-in link.\n\nThey should open that email, click the link (or sign up with that exact email), then the shared expenses open automatically — no need to dig through Settings.`
+        );
+      } else {
+        notify(
+          "Manager invited",
+          `Access level: ${level}.\n\nWe couldn't send the email automatically (check Supabase Auth email settings).\n\nAsk ${email} to open this app and sign up / sign in with that exact email. Shared expenses will open automatically after login.`
+        );
+      }
     }
   };
 
@@ -346,7 +353,8 @@ export function SettingsModal({ visible, onClose, currentBudget, onSaveBudget }:
                 <Text
                   style={[styles.managerCardSub, { color: colors.mutedForeground }]}
                 >
-                  Switch to view someone else's expenses in read-only mode.
+                  Switch to view someone else's expenses. Shared accounts open
+                  automatically when you sign in.
                 </Text>
 
                 {viewingAs && (
@@ -461,8 +469,8 @@ export function SettingsModal({ visible, onClose, currentBudget, onSaveBudget }:
               Give your manager access to your expenses. Choose how much they can do —
               Read only, View & Edit, or Full access.
               {"\n\n"}
-              No invite email is sent — tell them to open this app and sign in with
-              the email you add below.
+              We email them a sign-in link. After they open it, your expenses show
+              automatically with the access you chose.
             </Text>
 
             {isLoadingGrants ? (
