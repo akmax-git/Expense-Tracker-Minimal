@@ -45,6 +45,7 @@ create table public.expenses (
   category    text not null,
   note        text not null default '',
   date        text not null,
+  bill_url    text,
   created_at  timestamptz not null default now()
 );
 
@@ -93,3 +94,46 @@ create policy "managers read budgets" on public.budgets for select
 -- ─── Realtime ─────────────────────────────────────────────────
 alter publication supabase_realtime add table public.expenses;
 alter publication supabase_realtime add table public.budgets;
+
+-- ─── Bill / Receipt Storage ───────────────────────────────────
+insert into storage.buckets (id, name, public)
+values ('bills', 'bills', true)
+on conflict (id) do nothing;
+
+drop policy if exists "users upload own bills" on storage.objects;
+drop policy if exists "users read own bills" on storage.objects;
+drop policy if exists "users delete own bills" on storage.objects;
+drop policy if exists "managers read bills" on storage.objects;
+
+create policy "users upload own bills"
+on storage.objects for insert
+with check (
+  bucket_id = 'bills'
+  and auth.uid()::text = (storage.foldername(name))[1]
+);
+
+create policy "users read own bills"
+on storage.objects for select
+using (
+  bucket_id = 'bills'
+  and auth.uid()::text = (storage.foldername(name))[1]
+);
+
+create policy "users delete own bills"
+on storage.objects for delete
+using (
+  bucket_id = 'bills'
+  and auth.uid()::text = (storage.foldername(name))[1]
+);
+
+create policy "managers read bills"
+on storage.objects for select
+using (
+  bucket_id = 'bills'
+  and exists (
+    select 1 from public.manager_access ma
+    where ma.manager_user_id = auth.uid()
+      and ma.owner_user_id::text = (storage.foldername(name))[1]
+      and ma.status = 'active'
+  )
+);

@@ -1,8 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
 import React, { useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
+  Image,
   Platform,
   Pressable,
   ScrollView,
@@ -14,12 +18,15 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { CategoryGrid } from "@/components/CategoryGrid";
+import { DatePickerModal } from "@/components/DatePickerModal";
+import { useAuth } from "@/context/AuthContext";
 import {
   dateToString,
   formatINR,
   useExpenses,
 } from "@/context/ExpenseContext";
 import { useColors } from "@/hooks/useColors";
+import { uploadBill } from "@/lib/uploadBill";
 
 function todayStr() {
   return dateToString(new Date());
@@ -33,6 +40,7 @@ function yesterdayStr() {
 export default function AddExpenseScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   const { allCategories, addExpense } = useExpenses();
 
   const [amountRaw, setAmountRaw] = useState("");
@@ -40,26 +48,74 @@ export default function AddExpenseScreen() {
   const [note, setNote] = useState("");
   const [date, setDate] = useState(todayStr());
   const [saving, setSaving] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [billUri, setBillUri] = useState<string | null>(null);
+  const [billMime, setBillMime] = useState<string | null>(null);
 
   const amount = parseFloat(amountRaw) || 0;
   const canSave = amount > 0 && category;
 
-  const handleSave = async () => {
-    if (!canSave || saving) return;
-    setSaving(true);
-    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    await addExpense({ amount, category, note, date });
-    setAmountRaw("");
-    setNote("");
-    setDate(todayStr());
-    setSaving(false);
-    router.push("/(tabs)/");
-  };
-
+  // Tab bar overlays content (absolute). Keep Save button above it.
+  const tabBarHeight = Platform.OS === "web" ? 84 : 56 + insets.bottom;
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
   const displayAmount = amount > 0 ? formatINR(amount) : "₹0";
+  const isCustomDate = date !== todayStr() && date !== yesterdayStr();
+
+  const pickBill = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(
+        "Permission needed",
+        "Allow photo library access to attach a bill."
+      );
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      quality: 0.75,
+      allowsEditing: false,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      setBillUri(result.assets[0].uri);
+      setBillMime(result.assets[0].mimeType ?? null);
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!canSave || saving || !user) return;
+    setSaving(true);
+    try {
+      let billUrl: string | null = null;
+      if (billUri) {
+        billUrl = await uploadBill(user.id, billUri, billMime);
+      }
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      await addExpense({
+        amount,
+        category,
+        note,
+        date,
+        billUrl,
+      });
+      setAmountRaw("");
+      setNote("");
+      setDate(todayStr());
+      setBillUri(null);
+      setBillMime(null);
+      router.push("/(tabs)/");
+    } catch (err: any) {
+      Alert.alert(
+        "Could not save",
+        err?.message ?? "Something went wrong. Please try again."
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -81,7 +137,7 @@ export default function AddExpenseScreen() {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[
           styles.content,
-          { paddingBottom: bottomPad + 100 },
+          { paddingBottom: tabBarHeight + 100 },
         ]}
         showsVerticalScrollIndicator={false}
       >
@@ -137,9 +193,7 @@ export default function AddExpenseScreen() {
                   styles.dateChip,
                   {
                     backgroundColor:
-                      date === opt.value
-                        ? colors.primary
-                        : colors.card,
+                      date === opt.value ? colors.primary : colors.card,
                     borderColor:
                       date === opt.value ? colors.primary : colors.border,
                   },
@@ -160,20 +214,42 @@ export default function AddExpenseScreen() {
                 </Text>
               </Pressable>
             ))}
-            <TextInput
-              value={date}
-              onChangeText={setDate}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={colors.mutedForeground}
+
+            <Pressable
+              onPress={() => setShowCalendar(true)}
               style={[
-                styles.dateInput,
+                styles.dateChip,
+                styles.calendarChip,
                 {
-                  color: colors.foreground,
-                  backgroundColor: colors.card,
-                  borderColor: colors.border,
+                  backgroundColor: isCustomDate ? colors.primary : colors.card,
+                  borderColor: isCustomDate ? colors.primary : colors.border,
+                  flex: 1,
                 },
               ]}
-            />
+            >
+              <Ionicons
+                name="calendar-outline"
+                size={16}
+                color={
+                  isCustomDate
+                    ? colors.primaryForeground
+                    : colors.foreground
+                }
+              />
+              <Text
+                style={[
+                  styles.dateChipText,
+                  {
+                    color: isCustomDate
+                      ? colors.primaryForeground
+                      : colors.foreground,
+                  },
+                ]}
+                numberOfLines={1}
+              >
+                {isCustomDate ? date : "Pick date"}
+              </Text>
+            </Pressable>
           </View>
         </View>
 
@@ -211,14 +287,86 @@ export default function AddExpenseScreen() {
             numberOfLines={2}
           />
         </View>
+
+        {/* Bill upload */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
+            Bill / Receipt (optional)
+          </Text>
+          {billUri ? (
+            <View
+              style={[
+                styles.billPreview,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <Image source={{ uri: billUri }} style={styles.billImage} />
+              <View style={styles.billActions}>
+                <Pressable
+                  onPress={pickBill}
+                  style={[styles.billActionBtn, { backgroundColor: colors.secondary }]}
+                >
+                  <Ionicons name="swap-horizontal" size={16} color={colors.primary} />
+                  <Text style={[styles.billActionText, { color: colors.primary }]}>
+                    Change
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    setBillUri(null);
+                    setBillMime(null);
+                  }}
+                  style={[styles.billActionBtn, { backgroundColor: "#FF475722" }]}
+                >
+                  <Ionicons name="trash-outline" size={16} color="#FF4757" />
+                  <Text style={[styles.billActionText, { color: "#FF4757" }]}>
+                    Remove
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <Pressable
+              onPress={pickBill}
+              style={[
+                styles.billUpload,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <View
+                style={[
+                  styles.billUploadIcon,
+                  { backgroundColor: colors.secondary },
+                ]}
+              >
+                <Ionicons name="camera-outline" size={22} color={colors.primary} />
+              </View>
+              <View style={styles.billUploadText}>
+                <Text style={[styles.billUploadTitle, { color: colors.foreground }]}>
+                  Upload bill photo
+                </Text>
+                <Text
+                  style={[styles.billUploadHint, { color: colors.mutedForeground }]}
+                >
+                  Keep a copy of the receipt for your records
+                </Text>
+              </View>
+              <Ionicons
+                name="cloud-upload-outline"
+                size={20}
+                color={colors.mutedForeground}
+              />
+            </Pressable>
+          )}
+        </View>
       </ScrollView>
 
-      {/* Save button */}
+      {/* Save button — sits above the tab bar */}
       <View
         style={[
           styles.footer,
           {
-            paddingBottom: bottomPad + 16,
+            bottom: tabBarHeight,
             backgroundColor: colors.background,
             borderTopColor: colors.border,
           },
@@ -235,11 +383,17 @@ export default function AddExpenseScreen() {
             },
           ]}
         >
-          <Ionicons
-            name="checkmark"
-            size={20}
-            color={canSave ? colors.primaryForeground : colors.mutedForeground}
-          />
+          {saving ? (
+            <ActivityIndicator
+              color={canSave ? colors.primaryForeground : colors.mutedForeground}
+            />
+          ) : (
+            <Ionicons
+              name="checkmark"
+              size={20}
+              color={canSave ? colors.primaryForeground : colors.mutedForeground}
+            />
+          )}
           <Text
             style={[
               styles.saveBtnText,
@@ -254,6 +408,13 @@ export default function AddExpenseScreen() {
           </Text>
         </Pressable>
       </View>
+
+      <DatePickerModal
+        visible={showCalendar}
+        value={date}
+        onSelect={setDate}
+        onClose={() => setShowCalendar(false)}
+      />
     </View>
   );
 }
@@ -323,18 +484,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  calendarChip: {
+    flexDirection: "row",
+    gap: 6,
+    paddingHorizontal: 10,
+  },
   dateChipText: {
     fontSize: 13,
     fontFamily: "Inter_600SemiBold",
-  },
-  dateInput: {
-    flex: 1,
-    height: 38,
-    borderRadius: 10,
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
   },
   noteInput: {
     borderWidth: 1,
@@ -346,13 +503,69 @@ const styles = StyleSheet.create({
     minHeight: 70,
     textAlignVertical: "top",
   },
+  billUpload: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 14,
+    borderStyle: "dashed",
+    padding: 14,
+  },
+  billUploadIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  billUploadText: {
+    flex: 1,
+    gap: 2,
+  },
+  billUploadTitle: {
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
+  },
+  billUploadHint: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+  },
+  billPreview: {
+    borderWidth: 1,
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+  billImage: {
+    width: "100%",
+    height: 180,
+    resizeMode: "cover",
+  },
+  billActions: {
+    flexDirection: "row",
+    gap: 8,
+    padding: 10,
+  },
+  billActionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    height: 38,
+    borderRadius: 10,
+  },
+  billActionText: {
+    fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
+  },
   footer: {
     position: "absolute",
-    bottom: 0,
     left: 0,
     right: 0,
     paddingHorizontal: 16,
     paddingTop: 12,
+    paddingBottom: 12,
     borderTopWidth: 1,
   },
   saveBtn: {

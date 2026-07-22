@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
+import * as WebBrowser from "expo-web-browser";
 import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -137,7 +138,13 @@ export default function RecordsScreen() {
     setEditSaving(true);
     // Delete old and re-add with new data (updateExpense pattern)
     await deleteExpense(editTarget.id);
-    await addExpense({ amount, category: editCategory, note: editNote, date: editDate });
+    await addExpense({
+      amount,
+      category: editCategory,
+      note: editNote,
+      date: editDate,
+      billUrl: editTarget.billUrl ?? null,
+    });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setEditSaving(false);
     setShowEdit(false);
@@ -467,6 +474,16 @@ function ReceiptCard({
           </Text>
         ) : null}
 
+        {expense.billUrl ? (
+          <Pressable
+            onPress={() => WebBrowser.openBrowserAsync(expense.billUrl!)}
+            style={[styles.billLink, { backgroundColor: colors.secondary }]}
+          >
+            <Ionicons name="receipt-outline" size={14} color={colors.primary} />
+            <Text style={[styles.billLinkText, { color: colors.primary }]}>View bill</Text>
+          </Pressable>
+        ) : null}
+
         {/* Dashed divider */}
         <View style={[styles.receiptDivider, { borderColor: colors.border }]} />
 
@@ -647,6 +664,20 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
     marginLeft: 38,
     lineHeight: 18,
+  },
+  billLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 6,
+    marginLeft: 38,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  billLinkText: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
   },
   receiptDivider: {
     borderTopWidth: 1,

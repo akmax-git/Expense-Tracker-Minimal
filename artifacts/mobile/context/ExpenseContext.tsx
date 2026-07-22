@@ -15,6 +15,7 @@ export interface Expense {
   category: string;
   note: string;
   date: string;
+  billUrl?: string | null;
   createdAt: string;
 }
 
@@ -121,6 +122,7 @@ export function ExpenseProvider({
             category: r.category,
             note: r.note ?? "",
             date: r.date,
+            billUrl: r.bill_url ?? null,
             createdAt: r.created_at,
           }))
         );
@@ -180,6 +182,7 @@ export function ExpenseProvider({
               category: r.category,
               note: r.note ?? "",
               date: r.date,
+              billUrl: r.bill_url ?? null,
               createdAt: r.created_at,
             };
             setExpenses((prev) => {
@@ -238,6 +241,7 @@ export function ExpenseProvider({
         category: expense.category,
         note: expense.note,
         date: expense.date,
+        bill_url: expense.billUrl ?? null,
         created_at: createdAt,
       });
 
@@ -274,6 +278,7 @@ export function ExpenseProvider({
               category: r.category,
               note: r.note ?? "",
               date: r.date,
+              billUrl: r.bill_url ?? null,
               createdAt: r.created_at,
             }))
           );

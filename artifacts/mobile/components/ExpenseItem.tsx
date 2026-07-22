@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import * as WebBrowser from "expo-web-browser";
 import React from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 
@@ -35,6 +36,12 @@ export function ExpenseItem({ expense, category, onDelete, compact }: Props) {
         onPress: () => onDelete(expense.id),
       },
     ]);
+  };
+
+  const openBill = async () => {
+    if (!expense.billUrl) return;
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await WebBrowser.openBrowserAsync(expense.billUrl);
   };
 
   return (
@@ -75,9 +82,16 @@ export function ExpenseItem({ expense, category, onDelete, compact }: Props) {
         ) : null}
       </View>
       <View style={styles.right}>
-        <Text style={[styles.amount, { color: colors.foreground }]}>
-          {formatINR(expense.amount)}
-        </Text>
+        <View style={styles.amountRow}>
+          {expense.billUrl ? (
+            <Pressable onPress={openBill} hitSlop={8} style={styles.billBtn}>
+              <Ionicons name="receipt-outline" size={14} color={colors.primary} />
+            </Pressable>
+          ) : null}
+          <Text style={[styles.amount, { color: colors.foreground }]}>
+            {formatINR(expense.amount)}
+          </Text>
+        </View>
         {!compact && (
           <Text style={[styles.date, { color: colors.mutedForeground }]}>
             {formattedDate}
@@ -119,6 +133,14 @@ const styles = StyleSheet.create({
   right: {
     alignItems: "flex-end",
     gap: 2,
+  },
+  amountRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  billBtn: {
+    padding: 2,
   },
   amount: {
     fontSize: 15,
