@@ -3,6 +3,7 @@ import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Modal,
   Platform,
@@ -23,6 +24,7 @@ import {
   useExpenses,
 } from "@/context/ExpenseContext";
 import { useColors } from "@/hooks/useColors";
+import { exportExpensesToExcel } from "@/utils/exportExpenses";
 
 const GREEN = "#00C853";
 const BLUE = "#1565C0";
@@ -66,6 +68,7 @@ export default function RecordsScreen() {
   const [search, setSearch] = useState("");
   const [editTarget, setEditTarget] = useState<Expense | null>(null);
   const [showEdit, setShowEdit] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // Edit form state
   const [editAmount, setEditAmount] = useState("");
@@ -141,6 +144,19 @@ export default function RecordsScreen() {
     setEditTarget(null);
   }
 
+  async function handleExport() {
+    if (exporting) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setExporting(true);
+    try {
+      await exportExpensesToExcel(expenses);
+    } catch (err: any) {
+      Alert.alert("Export failed", err?.message ?? "Could not export expenses.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const totalAll = expenses.reduce((s, e) => s + e.amount, 0);
 
   return (
@@ -154,10 +170,32 @@ export default function RecordsScreen() {
       >
         <View style={styles.headerTop}>
           <Text style={[styles.title, { color: colors.foreground }]}>Records</Text>
-          <View style={[styles.totalBadge, { backgroundColor: colors.secondary }]}>
-            <Text style={[styles.totalBadgeText, { color: colors.primary }]}>
-              {formatINR(totalAll)} total
-            </Text>
+          <View style={styles.headerRight}>
+            <View style={[styles.totalBadge, { backgroundColor: colors.secondary }]}>
+              <Text style={[styles.totalBadgeText, { color: colors.primary }]}>
+                {formatINR(totalAll)} total
+              </Text>
+            </View>
+            <Pressable
+              onPress={handleExport}
+              disabled={exporting || expenses.length === 0}
+              style={({ pressed }) => [
+                styles.exportBtn,
+                {
+                  backgroundColor: colors.primary,
+                  opacity: pressed || exporting || expenses.length === 0 ? 0.6 : 1,
+                },
+              ]}
+            >
+              {exporting ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="download-outline" size={15} color="#fff" />
+                  <Text style={styles.exportBtnText}>Export</Text>
+                </>
+              )}
+            </Pressable>
           </View>
         </View>
 
@@ -471,6 +509,24 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  exportBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  exportBtnText: {
+    fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
+    color: "#fff",
   },
   title: {
     fontSize: 24,
