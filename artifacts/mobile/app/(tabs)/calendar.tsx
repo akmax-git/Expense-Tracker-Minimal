@@ -18,6 +18,7 @@ import {
   formatMonth,
   useExpenses,
 } from "@/context/ExpenseContext";
+import { useManager } from "@/context/ManagerContext";
 import { useColors } from "@/hooks/useColors";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -31,6 +32,7 @@ function monthOffset(base: string, off: number): string {
 export default function CalendarScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { canEdit } = useManager();
   const { getMonthExpenses, getDayExpenses, getCategoryInfo, deleteExpense } =
     useExpenses();
 
@@ -219,7 +221,7 @@ export default function CalendarScreen() {
                 key={exp.id}
                 expense={exp}
                 category={getCategoryInfo(exp.category)}
-                onDelete={deleteExpense}
+                onDelete={canEdit ? deleteExpense : undefined}
                 compact
               />
             ))

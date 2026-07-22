@@ -41,8 +41,7 @@ export default function DashboardScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { viewingAs, viewingAsEmail } = useManager();
-  const isManagerMode = viewingAs !== null;
+  const { viewingAsEmail, isManagerMode, canEdit, activeGrant } = useManager();
   const {
     getMonthExpenses,
     getMonthBudget,
@@ -148,7 +147,16 @@ export default function DashboardScreen() {
         >
           <Ionicons name="eye-outline" size={15} color={colors.primary} />
           <Text style={[styles.managerBannerText, { color: colors.primary }]}>
-            Viewing {viewingAsEmail ?? "manager account"} — read only
+            Viewing {viewingAsEmail ?? "manager account"}
+            {activeGrant
+              ? ` — ${
+                  activeGrant.permission === "full"
+                    ? "full access"
+                    : activeGrant.permission === "edit"
+                      ? "can edit"
+                      : "read only"
+                }`
+              : " — read only"}
           </Text>
         </View>
       )}
@@ -213,8 +221,8 @@ export default function DashboardScreen() {
           </View>
         )}
 
-        {/* Quick add — hidden in manager (read-only) mode */}
-        {isCurrentMonth && !isManagerMode && quickTemplates.length > 0 && (
+        {/* Quick add — only when own account or manager has edit/full */}
+        {isCurrentMonth && canEdit && quickTemplates.length > 0 && (
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
               Quick Add
@@ -284,7 +292,7 @@ export default function DashboardScreen() {
               key={exp.id}
               expense={exp}
               category={getCategoryInfo(exp.category)}
-              onDelete={isManagerMode ? undefined : deleteExpense}
+              onDelete={canEdit ? deleteExpense : undefined}
             />
           ))}
           {monthExpenses.length > 8 && (

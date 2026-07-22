@@ -27,6 +27,7 @@ import {
   formatINR,
   useExpenses,
 } from "@/context/ExpenseContext";
+import { useManager } from "@/context/ManagerContext";
 import { useColors } from "@/hooks/useColors";
 import { uploadBill } from "@/lib/uploadBill";
 import { exportExpensesToExcel } from "@/utils/exportExpenses";
@@ -68,6 +69,7 @@ export default function RecordsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const { viewingAs, canEdit } = useManager();
   const { expenses, allCategories, deleteExpense, addExpense, getCategoryInfo } =
     useExpenses();
 
@@ -89,6 +91,7 @@ export default function RecordsScreen() {
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
+  const billOwnerId = viewingAs ?? user?.id;
 
   // Filter expenses by search
   const filtered = useMemo(() => {
@@ -113,6 +116,13 @@ export default function RecordsScreen() {
   }, [filtered]);
 
   function openEdit(expense: Expense) {
+    if (!canEdit) {
+      Alert.alert(
+        "Read only",
+        "You only have view access. Ask the owner for View & Edit permission."
+      );
+      return;
+    }
     setEditTarget(expense);
     setEditAmount(String(expense.amount));
     setEditCategory(expense.category);
@@ -167,6 +177,13 @@ export default function RecordsScreen() {
   }
 
   async function handleDelete(expense: Expense) {
+    if (!canEdit) {
+      Alert.alert(
+        "Read only",
+        "You only have view access. Ask the owner for View & Edit permission."
+      );
+      return;
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Alert.alert(
       "Delete Expense",
@@ -186,7 +203,8 @@ export default function RecordsScreen() {
   }
 
   async function handleSaveEdit() {
-    if (!editTarget || !user) return;
+    if (!editTarget || !user || !billOwnerId) return;
+    if (!canEdit) return;
     const amount = parseFloat(editAmount);
     if (!amount || amount <= 0) return;
     setEditSaving(true);
@@ -195,7 +213,7 @@ export default function RecordsScreen() {
       if (editBillCleared) {
         billUrl = null;
       } else if (editBillIsNew && editBillUri) {
-        billUrl = await uploadBill(user.id, editBillUri, editBillMime);
+        billUrl = await uploadBill(billOwnerId, editBillUri, editBillMime);
       }
 
       // Delete old and re-add with new data (updateExpense pattern)
@@ -338,6 +356,7 @@ export default function RecordsScreen() {
                     catInfo={catInfo}
                     colors={colors}
                     dateLabel={formatDateFull(expense.date)}
+                    canEdit={canEdit}
                     onEdit={() => openEdit(expense)}
                     onDelete={() => handleDelete(expense)}
                   />
@@ -564,6 +583,7 @@ function ReceiptCard({
   catInfo,
   colors,
   dateLabel,
+  canEdit,
   onEdit,
   onDelete,
 }: {
@@ -572,6 +592,7 @@ function ReceiptCard({
   catInfo: any;
   colors: any;
   dateLabel: string;
+  canEdit: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -629,22 +650,28 @@ function ReceiptCard({
           <Text style={[styles.receiptId, { color: colors.mutedForeground }]}>
             #{expense.id.slice(-6).toUpperCase()}
           </Text>
-          <View style={styles.receiptBtns}>
-            <Pressable
-              onPress={onEdit}
-              style={[styles.receiptBtn, { backgroundColor: "#1565C022" }]}
-            >
-              <Ionicons name="pencil-outline" size={14} color={BLUE} />
-              <Text style={[styles.receiptBtnText, { color: BLUE }]}>Edit</Text>
-            </Pressable>
-            <Pressable
-              onPress={onDelete}
-              style={[styles.receiptBtn, { backgroundColor: "#FF475722" }]}
-            >
-              <Ionicons name="trash-outline" size={14} color="#FF4757" />
-              <Text style={[styles.receiptBtnText, { color: "#FF4757" }]}>Delete</Text>
-            </Pressable>
-          </View>
+          {canEdit ? (
+            <View style={styles.receiptBtns}>
+              <Pressable
+                onPress={onEdit}
+                style={[styles.receiptBtn, { backgroundColor: "#1565C022" }]}
+              >
+                <Ionicons name="pencil-outline" size={14} color={BLUE} />
+                <Text style={[styles.receiptBtnText, { color: BLUE }]}>Edit</Text>
+              </Pressable>
+              <Pressable
+                onPress={onDelete}
+                style={[styles.receiptBtn, { backgroundColor: "#FF475722" }]}
+              >
+                <Ionicons name="trash-outline" size={14} color="#FF4757" />
+                <Text style={[styles.receiptBtnText, { color: "#FF4757" }]}>Delete</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <Text style={[styles.receiptId, { color: colors.mutedForeground }]}>
+              View only
+            </Text>
+          )}
         </View>
       </View>
     </View>

@@ -16,7 +16,12 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "@/context/AuthContext";
-import { useManager } from "@/context/ManagerContext";
+import {
+  MANAGER_PERMISSIONS,
+  ManagerPermission,
+  permissionLabel,
+  useManager,
+} from "@/context/ManagerContext";
 import { useColors } from "@/hooks/useColors";
 
 interface Props {
@@ -33,6 +38,36 @@ function SectionHeader({ title, colors }: { title: string; colors: ReturnType<ty
       {title}
     </Text>
   );
+}
+
+/** Alert.alert button callbacks are unreliable on web — use window.confirm there. */
+function confirmDestructive(
+  title: string,
+  message: string,
+  confirmLabel = "Remove"
+): Promise<boolean> {
+  if (Platform.OS === "web") {
+    if (typeof window === "undefined") return Promise.resolve(false);
+    return Promise.resolve(window.confirm(`${title}\n\n${message}`));
+  }
+  return new Promise((resolve) => {
+    Alert.alert(title, message, [
+      { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+      {
+        text: confirmLabel,
+        style: "destructive",
+        onPress: () => resolve(true),
+      },
+    ]);
+  });
+}
+
+function notify(title: string, message: string) {
+  if (Platform.OS === "web") {
+    if (typeof window !== "undefined") window.alert(`${title}\n\n${message}`);
+    return;
+  }
+  Alert.alert(title, message);
 }
 
 function Row({ label, value, icon, onPress, destructive, colors }: {
@@ -91,62 +126,86 @@ export function SettingsModal({ visible, onClose, currentBudget, onSaveBudget }:
     managerOf,
     isLoadingGrants,
     grantAccess,
+    updatePermission,
     revokeAccess,
-    reload,
     viewingAs,
-    viewingAsEmail,
     setViewingAs,
+    isManagerMode,
+    canManageBudget,
   } = useManager();
 
   const [budgetInput, setBudgetInput] = useState(String(currentBudget || ""));
   const [grantEmailInput, setGrantEmailInput] = useState("");
+  const [grantPermission, setGrantPermission] =
+    useState<ManagerPermission>("read");
   const [isGranting, setIsGranting] = useState(false);
   const [grantError, setGrantError] = useState<string | null>(null);
   const [showGrantInput, setShowGrantInput] = useState(false);
+  const [updatingGrantId, setUpdatingGrantId] = useState<string | null>(null);
 
   const topPadding = Platform.OS === "web" ? 24 : insets.top;
 
   const saveBudget = () => {
+    if (isManagerMode && !canManageBudget) {
+      notify(
+        "No budget access",
+        "Your manager access is view/edit only. Ask the owner for Full access to change budget."
+      );
+      return;
+    }
     const val = parseFloat(budgetInput.replace(/,/g, ""));
     if (!isNaN(val) && val > 0) {
       onSaveBudget(val);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } else {
-      Alert.alert("Invalid amount", "Please enter a valid budget amount.");
+      notify("Invalid amount", "Please enter a valid budget amount.");
     }
   };
 
   const handleGrantAccess = async () => {
     if (!grantEmailInput.trim()) return;
+    const email = grantEmailInput.trim().toLowerCase();
     setIsGranting(true);
     setGrantError(null);
-    const err = await grantAccess(grantEmailInput.trim());
+    const err = await grantAccess(email, grantPermission);
     setIsGranting(false);
     if (err) {
       setGrantError(err);
     } else {
+      const level = permissionLabel(grantPermission);
       setGrantEmailInput("");
+      setGrantPermission("read");
       setShowGrantInput(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      notify(
+        "Manager invited",
+        `Access level: ${level}.\n\nNo email is sent automatically.\n\nAsk ${email} to open this app and sign up / sign in with that exact email. Once they do, access becomes Active.`
+      );
     }
   };
 
-  const handleRevoke = (grantId: string, email: string) => {
-    Alert.alert(
+  const handleChangePermission = async (
+    grantId: string,
+    permission: ManagerPermission
+  ) => {
+    setUpdatingGrantId(grantId);
+    const err = await updatePermission(grantId, permission);
+    setUpdatingGrantId(null);
+    if (err) {
+      notify("Could not update", err);
+      return;
+    }
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  const handleRevoke = async (grantId: string, email: string) => {
+    const confirmed = await confirmDestructive(
       "Remove access",
-      `Remove manager access for ${email}? They will no longer be able to view your expenses.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Remove",
-          style: "destructive",
-          onPress: async () => {
-            await revokeAccess(grantId);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-          },
-        },
-      ]
+      `Remove manager access for ${email}? They will no longer be able to view your expenses.`
     );
+    if (!confirmed) return;
+    await revokeAccess(grantId);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
   };
 
   const handleSwitchView = (ownerUserId: string, ownerEmail: string) => {
@@ -227,33 +286,39 @@ export function SettingsModal({ visible, onClose, currentBudget, onSaveBudget }:
             <Text style={[styles.budgetLabel, { color: colors.mutedForeground }]}>
               Budget (₹)
             </Text>
-            <View style={styles.budgetRow}>
-              <TextInput
-                style={[
-                  styles.budgetInput,
-                  {
-                    color: colors.foreground,
-                    borderColor: colors.border,
-                    backgroundColor: colors.background,
-                  },
-                ]}
-                value={budgetInput}
-                onChangeText={setBudgetInput}
-                keyboardType="numeric"
-                placeholder="Enter amount"
-                placeholderTextColor={colors.mutedForeground}
-                returnKeyType="done"
-                onSubmitEditing={saveBudget}
-              />
-              <Pressable
-                onPress={saveBudget}
-                style={[styles.saveBtn, { backgroundColor: colors.primary }]}
-              >
-                <Text style={[styles.saveBtnText, { color: colors.primaryForeground }]}>
-                  Save
-                </Text>
-              </Pressable>
-            </View>
+            {isManagerMode && !canManageBudget ? (
+              <Text style={[styles.budgetLocked, { color: colors.mutedForeground }]}>
+                ₹{currentBudget || 0} — Full access required to change
+              </Text>
+            ) : (
+              <View style={styles.budgetRow}>
+                <TextInput
+                  style={[
+                    styles.budgetInput,
+                    {
+                      color: colors.foreground,
+                      borderColor: colors.border,
+                      backgroundColor: colors.background,
+                    },
+                  ]}
+                  value={budgetInput}
+                  onChangeText={setBudgetInput}
+                  keyboardType="numeric"
+                  placeholder="Enter amount"
+                  placeholderTextColor={colors.mutedForeground}
+                  returnKeyType="done"
+                  onSubmitEditing={saveBudget}
+                />
+                <Pressable
+                  onPress={saveBudget}
+                  style={[styles.saveBtn, { backgroundColor: colors.primary }]}
+                >
+                  <Text style={[styles.saveBtnText, { color: colors.primaryForeground }]}>
+                    Save
+                  </Text>
+                </Pressable>
+              </View>
+            )}
           </View>
 
           {/* Manager Access — Manager Mode switcher (if this user is a manager) */}
@@ -347,8 +412,8 @@ export function SettingsModal({ visible, onClose, currentBudget, onSaveBudget }:
                         ]}
                       >
                         {viewingAs === g.ownerUserId
-                          ? "Currently viewing"
-                          : "Tap to view"}
+                          ? `Currently viewing · ${permissionLabel(g.permission)}`
+                          : `${permissionLabel(g.permission)} · Tap to view`}
                       </Text>
                     </View>
                     {viewingAs === g.ownerUserId ? (
@@ -393,8 +458,11 @@ export function SettingsModal({ visible, onClose, currentBudget, onSaveBudget }:
             <Text
               style={[styles.managerCardSub, { color: colors.mutedForeground }]}
             >
-              Give your manager read-only access to view your expense history and
-              analytics. They cannot add or delete anything.
+              Give your manager access to your expenses. Choose how much they can do —
+              Read only, View & Edit, or Full access.
+              {"\n\n"}
+              No invite email is sent — tell them to open this app and sign in with
+              the email you add below.
             </Text>
 
             {isLoadingGrants ? (
@@ -411,62 +479,111 @@ export function SettingsModal({ visible, onClose, currentBudget, onSaveBudget }:
                       <View
                         key={g.id}
                         style={[
-                          styles.grantRow,
+                          styles.grantRowWrap,
                           { borderColor: colors.border, backgroundColor: colors.background },
                         ]}
                       >
-                        <View
-                          style={[
-                            styles.grantAvatar,
-                            { backgroundColor: colors.accent + "20" },
-                          ]}
-                        >
-                          <Ionicons
-                            name="person-outline"
-                            size={16}
-                            color={colors.accent}
-                          />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text
-                            style={[styles.grantEmail, { color: colors.foreground }]}
-                            numberOfLines={1}
-                          >
-                            {g.managerEmail}
-                          </Text>
-                          <Text
+                        <View style={styles.grantRowTop}>
+                          <View
                             style={[
-                              styles.grantStatus,
-                              {
-                                color:
-                                  g.status === "active"
-                                    ? colors.accent
-                                    : colors.mutedForeground,
-                              },
+                              styles.grantAvatar,
+                              { backgroundColor: colors.accent + "20" },
                             ]}
                           >
-                            {g.status === "active"
-                              ? "Active — can view your expenses"
-                              : "Pending — waiting for manager to sign up"}
-                          </Text>
+                            <Ionicons
+                              name="person-outline"
+                              size={16}
+                              color={colors.accent}
+                            />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text
+                              style={[styles.grantEmail, { color: colors.foreground }]}
+                              numberOfLines={1}
+                            >
+                              {g.managerEmail}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.grantStatus,
+                                {
+                                  color:
+                                    g.status === "active"
+                                      ? colors.accent
+                                      : colors.mutedForeground,
+                                },
+                              ]}
+                            >
+                              {g.status === "active"
+                                ? `Active · ${permissionLabel(g.permission)}`
+                                : `Pending · ${permissionLabel(g.permission)}`}
+                            </Text>
+                          </View>
+                          <Pressable
+                            onPress={() => handleRevoke(g.id, g.managerEmail)}
+                            hitSlop={12}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Remove ${g.managerEmail}`}
+                            style={({ pressed }) => [
+                              styles.revokeBtn,
+                              pressed && { opacity: 0.6 },
+                            ]}
+                          >
+                            <Ionicons
+                              name="close-circle"
+                              size={24}
+                              color={colors.destructive}
+                            />
+                          </Pressable>
                         </View>
-                        <Pressable
-                          onPress={() => handleRevoke(g.id, g.managerEmail)}
-                          hitSlop={12}
-                        >
-                          <Ionicons
-                            name="close-circle-outline"
-                            size={22}
-                            color={colors.destructive}
-                          />
-                        </Pressable>
+
+                        <View style={styles.permissionChipRow}>
+                          {MANAGER_PERMISSIONS.map((opt) => {
+                            const selected = g.permission === opt.value;
+                            const busy = updatingGrantId === g.id;
+                            return (
+                              <Pressable
+                                key={opt.value}
+                                disabled={busy}
+                                onPress={() =>
+                                  handleChangePermission(g.id, opt.value)
+                                }
+                                style={[
+                                  styles.permissionChip,
+                                  {
+                                    backgroundColor: selected
+                                      ? colors.primary
+                                      : colors.card,
+                                    borderColor: selected
+                                      ? colors.primary
+                                      : colors.border,
+                                    opacity: busy ? 0.5 : 1,
+                                  },
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    styles.permissionChipText,
+                                    {
+                                      color: selected
+                                        ? colors.primaryForeground
+                                        : colors.foreground,
+                                    },
+                                  ]}
+                                >
+                                  {opt.label}
+                                </Text>
+                              </Pressable>
+                            );
+                          })}
+                        </View>
                       </View>
                     ))}
                   </View>
                 )}
 
                 {showGrantInput ? (
-                  <View style={{ marginTop: 12, gap: 8 }}>
+                  <View style={{ marginTop: 12, gap: 10 }}>
                     <TextInput
                       style={[
                         styles.emailInput,
@@ -489,6 +606,73 @@ export function SettingsModal({ visible, onClose, currentBudget, onSaveBudget }:
                       returnKeyType="done"
                       onSubmitEditing={handleGrantAccess}
                     />
+
+                    <Text
+                      style={[styles.accessLevelLabel, { color: colors.mutedForeground }]}
+                    >
+                      ACCESS LEVEL
+                    </Text>
+                    <View style={{ gap: 8 }}>
+                      {MANAGER_PERMISSIONS.map((opt) => {
+                        const selected = grantPermission === opt.value;
+                        return (
+                          <Pressable
+                            key={opt.value}
+                            onPress={() => setGrantPermission(opt.value)}
+                            style={[
+                              styles.permissionOption,
+                              {
+                                borderColor: selected
+                                  ? colors.primary
+                                  : colors.border,
+                                backgroundColor: selected
+                                  ? colors.primary + "12"
+                                  : colors.background,
+                              },
+                            ]}
+                          >
+                            <View
+                              style={[
+                                styles.radioOuter,
+                                {
+                                  borderColor: selected
+                                    ? colors.primary
+                                    : colors.mutedForeground,
+                                },
+                              ]}
+                            >
+                              {selected ? (
+                                <View
+                                  style={[
+                                    styles.radioInner,
+                                    { backgroundColor: colors.primary },
+                                  ]}
+                                />
+                              ) : null}
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text
+                                style={[
+                                  styles.permissionOptionTitle,
+                                  { color: colors.foreground },
+                                ]}
+                              >
+                                {opt.label}
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.permissionOptionDesc,
+                                  { color: colors.mutedForeground },
+                                ]}
+                              >
+                                {opt.description}
+                              </Text>
+                            </View>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+
                     {grantError && (
                       <Text style={[styles.errorText, { color: colors.destructive }]}>
                         {grantError}
@@ -499,6 +683,7 @@ export function SettingsModal({ visible, onClose, currentBudget, onSaveBudget }:
                         onPress={() => {
                           setShowGrantInput(false);
                           setGrantEmailInput("");
+                          setGrantPermission("read");
                           setGrantError(null);
                         }}
                         style={[
@@ -559,20 +744,14 @@ export function SettingsModal({ visible, onClose, currentBudget, onSaveBudget }:
           {/* Sign out */}
           <SectionHeader title="DANGER ZONE" colors={colors} />
           <Pressable
-            onPress={() =>
-              Alert.alert(
+            onPress={async () => {
+              const confirmed = await confirmDestructive(
                 "Sign out",
                 "Are you sure you want to sign out?",
-                [
-                  { text: "Cancel", style: "cancel" },
-                  {
-                    text: "Sign out",
-                    style: "destructive",
-                    onPress: signOut,
-                  },
-                ]
-              )
-            }
+                "Sign out"
+              );
+              if (confirmed) await signOut();
+            }}
             style={({ pressed }) => [
               styles.row,
               {
@@ -664,6 +843,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: "Inter_500Medium",
   },
+  budgetLocked: {
+    fontSize: 14,
+    fontFamily: "Inter_400Regular",
+    lineHeight: 20,
+  },
   budgetRow: {
     flexDirection: "row",
     gap: 10,
@@ -718,6 +902,17 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: 4,
   },
+  grantRowWrap: {
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 12,
+    gap: 10,
+  },
+  grantRowTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
   grantAvatar: {
     width: 32,
     height: 32,
@@ -732,6 +927,62 @@ const styles = StyleSheet.create({
   grantStatus: {
     fontSize: 12,
     fontFamily: "Inter_400Regular",
+    marginTop: 2,
+  },
+  revokeBtn: {
+    padding: 4,
+    marginLeft: 4,
+  },
+  permissionChipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  permissionChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  permissionChipText: {
+    fontSize: 11,
+    fontFamily: "Inter_600SemiBold",
+  },
+  accessLevelLabel: {
+    fontSize: 11,
+    fontFamily: "Inter_600SemiBold",
+    letterSpacing: 0.6,
+  },
+  permissionOption: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  radioOuter: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
+  },
+  radioInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  permissionOptionTitle: {
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
+  },
+  permissionOptionDesc: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    lineHeight: 17,
     marginTop: 2,
   },
   emailInput: {

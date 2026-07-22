@@ -45,6 +45,7 @@ function ClassicTabLayout() {
   const isDark = colorScheme === "dark";
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
+  const { canEdit } = useManager();
 
   return (
     <Tabs
@@ -93,6 +94,7 @@ function ClassicTabLayout() {
         name="add"
         options={{
           title: "Add",
+          href: canEdit ? undefined : null,
           tabBarIcon: ({ color }) =>
             isIOS ? (
               <SymbolView name="plus.circle" tintColor={color} size={24} />

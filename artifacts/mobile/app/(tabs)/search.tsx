@@ -18,6 +18,7 @@ import {
   formatMonth,
   useExpenses,
 } from "@/context/ExpenseContext";
+import { useManager } from "@/context/ManagerContext";
 import { useColors } from "@/hooks/useColors";
 
 function lastNMonths(n: number): string[] {
@@ -35,6 +36,7 @@ function lastNMonths(n: number): string[] {
 export default function SearchScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { canEdit } = useManager();
   const { expenses, allCategories, getCategoryInfo, deleteExpense } =
     useExpenses();
 
@@ -196,7 +198,7 @@ export default function SearchScreen() {
             <ExpenseItem
               expense={item}
               category={getCategoryInfo(item.category)}
-              onDelete={deleteExpense}
+              onDelete={canEdit ? deleteExpense : undefined}
             />
           )}
         />

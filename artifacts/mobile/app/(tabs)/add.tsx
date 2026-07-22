@@ -25,6 +25,7 @@ import {
   formatINR,
   useExpenses,
 } from "@/context/ExpenseContext";
+import { useManager } from "@/context/ManagerContext";
 import { useColors } from "@/hooks/useColors";
 import { uploadBill } from "@/lib/uploadBill";
 
@@ -41,6 +42,7 @@ export default function AddExpenseScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const { viewingAs, canEdit, isManagerMode } = useManager();
   const { allCategories, addExpense } = useExpenses();
 
   const [amountRaw, setAmountRaw] = useState("");
@@ -53,7 +55,7 @@ export default function AddExpenseScreen() {
   const [billMime, setBillMime] = useState<string | null>(null);
 
   const amount = parseFloat(amountRaw) || 0;
-  const canSave = amount > 0 && category;
+  const canSave = amount > 0 && category && canEdit;
 
   // Tab bar overlays content (absolute). Keep Save button above it.
   const tabBarHeight = Platform.OS === "web" ? 84 : 56 + insets.bottom;
@@ -61,6 +63,8 @@ export default function AddExpenseScreen() {
 
   const displayAmount = amount > 0 ? formatINR(amount) : "₹0";
   const isCustomDate = date !== todayStr() && date !== yesterdayStr();
+  // Bills must live under the expense owner's folder (viewingAs when managing)
+  const billOwnerId = viewingAs ?? user?.id;
 
   const pickBill = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -86,12 +90,19 @@ export default function AddExpenseScreen() {
   };
 
   const handleSave = async () => {
-    if (!canSave || saving || !user) return;
+    if (!canSave || saving || !user || !billOwnerId) return;
+    if (!canEdit) {
+      Alert.alert(
+        "Read only",
+        "You only have view access to this account. Ask the owner for View & Edit permission."
+      );
+      return;
+    }
     setSaving(true);
     try {
       let billUrl: string | null = null;
       if (billUri) {
-        billUrl = await uploadBill(user.id, billUri, billMime);
+        billUrl = await uploadBill(billOwnerId, billUri, billMime);
       }
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       await addExpense({
@@ -132,6 +143,20 @@ export default function AddExpenseScreen() {
       >
         <Text style={[styles.title, { color: colors.foreground }]}>Add Expense</Text>
       </View>
+
+      {isManagerMode && !canEdit ? (
+        <View
+          style={[
+            styles.readOnlyBanner,
+            { backgroundColor: colors.destructive + "15", borderColor: colors.destructive + "30" },
+          ]}
+        >
+          <Ionicons name="lock-closed-outline" size={16} color={colors.destructive} />
+          <Text style={[styles.readOnlyBannerText, { color: colors.destructive }]}>
+            Read only — you cannot add expenses for this account
+          </Text>
+        </View>
+      ) : null}
 
       <ScrollView
         keyboardShouldPersistTaps="handled"
@@ -429,6 +454,22 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontFamily: "Inter_700Bold",
+  },
+  readOnlyBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginHorizontal: 16,
+    marginTop: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  readOnlyBannerText: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: "Inter_500Medium",
   },
   content: {
     paddingHorizontal: 16,

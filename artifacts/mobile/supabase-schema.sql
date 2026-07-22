@@ -17,6 +17,7 @@ create table public.manager_access (
   manager_email   text not null,
   manager_user_id uuid references auth.users(id) on delete set null,
   status          text not null default 'pending' check (status in ('pending', 'active')),
+  permission      text not null default 'read' check (permission in ('read', 'edit', 'full')),
   created_at      timestamptz not null default now(),
   unique(owner_user_id, manager_email)
 );
@@ -31,11 +32,15 @@ create policy "managers view their grants" on public.manager_access for select
   using (auth.uid() = manager_user_id);
 
 create policy "pending managers can see their invite" on public.manager_access for select
-  using (manager_email = auth.email() and manager_user_id is null);
+  using (lower(manager_email) = lower(auth.email()) and manager_user_id is null);
 
 create policy "pending managers can activate" on public.manager_access for update
-  using  (manager_email = auth.email())
-  with check (manager_user_id = auth.uid() and status = 'active');
+  using  (lower(manager_email) = lower(auth.email()))
+  with check (
+    manager_user_id = auth.uid()
+    and status = 'active'
+    and permission in ('read', 'edit', 'full')
+  );
 
 -- ─── Expenses ────────────────────────────────────────────────
 create table public.expenses (
@@ -65,6 +70,48 @@ create policy "managers read expenses" on public.expenses for select
     )
   );
 
+create policy "managers insert expenses" on public.expenses for insert
+  with check (
+    exists (
+      select 1 from public.manager_access ma
+      where ma.manager_user_id = auth.uid()
+        and ma.owner_user_id = expenses.user_id
+        and ma.status = 'active'
+        and ma.permission in ('edit', 'full')
+    )
+  );
+
+create policy "managers delete expenses" on public.expenses for delete
+  using (
+    exists (
+      select 1 from public.manager_access ma
+      where ma.manager_user_id = auth.uid()
+        and ma.owner_user_id = expenses.user_id
+        and ma.status = 'active'
+        and ma.permission in ('edit', 'full')
+    )
+  );
+
+create policy "managers update expenses" on public.expenses for update
+  using (
+    exists (
+      select 1 from public.manager_access ma
+      where ma.manager_user_id = auth.uid()
+        and ma.owner_user_id = expenses.user_id
+        and ma.status = 'active'
+        and ma.permission in ('edit', 'full')
+    )
+  )
+  with check (
+    exists (
+      select 1 from public.manager_access ma
+      where ma.manager_user_id = auth.uid()
+        and ma.owner_user_id = expenses.user_id
+        and ma.status = 'active'
+        and ma.permission in ('edit', 'full')
+    )
+  );
+
 -- ─── Budgets ─────────────────────────────────────────────────
 create table public.budgets (
   id          uuid primary key default gen_random_uuid(),
@@ -88,6 +135,26 @@ create policy "managers read budgets" on public.budgets for select
       where ma.manager_user_id = auth.uid()
         and ma.owner_user_id = budgets.user_id
         and ma.status = 'active'
+    )
+  );
+
+create policy "managers write budgets" on public.budgets for all
+  using (
+    exists (
+      select 1 from public.manager_access ma
+      where ma.manager_user_id = auth.uid()
+        and ma.owner_user_id = budgets.user_id
+        and ma.status = 'active'
+        and ma.permission = 'full'
+    )
+  )
+  with check (
+    exists (
+      select 1 from public.manager_access ma
+      where ma.manager_user_id = auth.uid()
+        and ma.owner_user_id = budgets.user_id
+        and ma.status = 'active'
+        and ma.permission = 'full'
     )
   );
 
@@ -135,5 +202,31 @@ using (
     where ma.manager_user_id = auth.uid()
       and ma.owner_user_id::text = (storage.foldername(name))[1]
       and ma.status = 'active'
+  )
+);
+
+create policy "managers upload bills"
+on storage.objects for insert
+with check (
+  bucket_id = 'bills'
+  and exists (
+    select 1 from public.manager_access ma
+    where ma.manager_user_id = auth.uid()
+      and ma.owner_user_id::text = (storage.foldername(name))[1]
+      and ma.status = 'active'
+      and ma.permission in ('edit', 'full')
+  )
+);
+
+create policy "managers delete bills"
+on storage.objects for delete
+using (
+  bucket_id = 'bills'
+  and exists (
+    select 1 from public.manager_access ma
+    where ma.manager_user_id = auth.uid()
+      and ma.owner_user_id::text = (storage.foldername(name))[1]
+      and ma.status = 'active'
+      and ma.permission in ('edit', 'full')
   )
 );

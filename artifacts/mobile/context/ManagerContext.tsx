@@ -3,11 +3,43 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
 } from "react";
 
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "./AuthContext";
+
+/** Access level granted to a manager */
+export type ManagerPermission = "read" | "edit" | "full";
+
+export const MANAGER_PERMISSIONS: {
+  value: ManagerPermission;
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: "read",
+    label: "Read only",
+    description: "View expenses, analytics, and bills — cannot change anything",
+  },
+  {
+    value: "edit",
+    label: "View & Edit",
+    description: "Add, edit, and delete expenses on your behalf",
+  },
+  {
+    value: "full",
+    label: "Full access",
+    description: "Edit expenses plus change monthly budget",
+  },
+];
+
+export function permissionLabel(permission: ManagerPermission): string {
+  return (
+    MANAGER_PERMISSIONS.find((p) => p.value === permission)?.label ?? "Read only"
+  );
+}
 
 export interface ManagerGrant {
   id: string;
@@ -16,6 +48,7 @@ export interface ManagerGrant {
   managerEmail: string;
   managerUserId: string | null;
   status: "pending" | "active";
+  permission: ManagerPermission;
   createdAt: string;
 }
 
@@ -27,14 +60,34 @@ interface ManagerContextValue {
   /** The owner user_id being viewed in manager mode; null = own data */
   viewingAs: string | null;
   viewingAsEmail: string | null;
+  /** Active grant for the account currently being viewed (manager mode) */
+  activeGrant: ManagerGrant | null;
+  /** True when viewing someone else's account */
+  isManagerMode: boolean;
+  /** Can add / edit / delete expenses for the viewed account */
+  canEdit: boolean;
+  /** Can change monthly budget for the viewed account */
+  canManageBudget: boolean;
   isLoadingGrants: boolean;
   setViewingAs: (ownerUserId: string | null, ownerEmail: string | null) => void;
-  grantAccess: (managerEmail: string) => Promise<string | null>;
+  grantAccess: (
+    managerEmail: string,
+    permission?: ManagerPermission
+  ) => Promise<string | null>;
+  updatePermission: (
+    grantId: string,
+    permission: ManagerPermission
+  ) => Promise<string | null>;
   revokeAccess: (grantId: string) => Promise<void>;
   reload: () => Promise<void>;
 }
 
 const ManagerContext = createContext<ManagerContextValue | null>(null);
+
+function normalizePermission(value: unknown): ManagerPermission {
+  if (value === "edit" || value === "full" || value === "read") return value;
+  return "read";
+}
 
 function mapRow(r: Record<string, unknown>): ManagerGrant {
   return {
@@ -44,6 +97,7 @@ function mapRow(r: Record<string, unknown>): ManagerGrant {
     managerEmail: r.manager_email as string,
     managerUserId: (r.manager_user_id as string | null) ?? null,
     status: r.status as "pending" | "active",
+    permission: normalizePermission(r.permission),
     createdAt: r.created_at as string,
   };
 }
@@ -87,7 +141,7 @@ export function ManagerProvider({ children }: { children: React.ReactNode }) {
         .eq("status", "active");
 
       // Also look for pending grants matching my email (not yet linked to my user_id)
-      const email = user.email ?? "";
+      const email = (user.email ?? "").trim().toLowerCase();
       const { data: pendingRows } = await supabase
         .from("manager_access")
         .select("*")
@@ -132,23 +186,68 @@ export function ManagerProvider({ children }: { children: React.ReactNode }) {
   }, [user?.id]);
 
   const grantAccess = useCallback(
-    async (managerEmail: string): Promise<string | null> => {
+    async (
+      managerEmail: string,
+      permission: ManagerPermission = "read"
+    ): Promise<string | null> => {
       if (!user) return "Not signed in";
       const email = managerEmail.trim().toLowerCase();
       if (!email) return "Please enter an email address";
+      if (email === (user.email ?? "").trim().toLowerCase()) {
+        return "You cannot grant access to yourself";
+      }
 
       const { error } = await supabase.from("manager_access").insert({
         owner_user_id: user.id,
-        owner_email: user.email ?? "",
+        owner_email: (user.email ?? "").trim().toLowerCase(),
         manager_email: email,
         status: "pending",
+        permission,
       });
 
       if (error) {
         if (error.code === "23505") return "Access already granted to this email";
+        // Column may not exist yet if migration not run — retry without permission
+        if (error.message?.toLowerCase().includes("permission")) {
+          const { error: fallbackErr } = await supabase
+            .from("manager_access")
+            .insert({
+              owner_user_id: user.id,
+              owner_email: (user.email ?? "").trim().toLowerCase(),
+              manager_email: email,
+              status: "pending",
+            });
+          if (fallbackErr) {
+            if (fallbackErr.code === "23505") {
+              return "Access already granted to this email";
+            }
+            return fallbackErr.message;
+          }
+          await reload();
+          return null;
+        }
         return error.message;
       }
 
+      await reload();
+      return null;
+    },
+    [user, reload]
+  );
+
+  const updatePermission = useCallback(
+    async (
+      grantId: string,
+      permission: ManagerPermission
+    ): Promise<string | null> => {
+      if (!user) return "Not signed in";
+      const { error } = await supabase
+        .from("manager_access")
+        .update({ permission })
+        .eq("id", grantId)
+        .eq("owner_user_id", user.id);
+
+      if (error) return error.message;
       await reload();
       return null;
     },
@@ -176,6 +275,17 @@ export function ManagerProvider({ children }: { children: React.ReactNode }) {
     [user, myGrants, viewingAs, reload]
   );
 
+  const activeGrant = useMemo(() => {
+    if (!viewingAs) return null;
+    return managerOf.find((g) => g.ownerUserId === viewingAs) ?? null;
+  }, [viewingAs, managerOf]);
+
+  const isManagerMode = viewingAs !== null;
+  // Own account always has full control; manager mode respects grant permission
+  const canEdit = !isManagerMode || activeGrant?.permission === "edit" || activeGrant?.permission === "full";
+  const canManageBudget =
+    !isManagerMode || activeGrant?.permission === "full";
+
   return (
     <ManagerContext.Provider
       value={{
@@ -183,9 +293,14 @@ export function ManagerProvider({ children }: { children: React.ReactNode }) {
         managerOf,
         viewingAs,
         viewingAsEmail,
+        activeGrant,
+        isManagerMode,
+        canEdit,
+        canManageBudget,
         isLoadingGrants,
         setViewingAs,
         grantAccess,
+        updatePermission,
         revokeAccess,
         reload,
       }}
