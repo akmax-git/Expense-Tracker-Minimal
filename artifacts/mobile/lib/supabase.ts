@@ -10,8 +10,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     storage: Platform.OS !== "web" ? AsyncStorage : undefined,
     autoRefreshToken: true,
     persistSession: true,
-    // Web: pick up recovery / OAuth tokens from the URL hash.
-    // Native: handled manually via Linking in AuthContext.
-    detectSessionInUrl: Platform.OS === "web",
+    // AuthContext parses the URL so we can set isPasswordRecovery correctly.
+    // Enabling this AND manual handling would double-consume PKCE codes.
+    detectSessionInUrl: false,
   },
 });

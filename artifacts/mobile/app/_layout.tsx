@@ -6,7 +6,7 @@ import {
   useFonts,
 } from "@expo-google-fonts/inter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { router, Stack } from "expo-router";
+import { router, Stack, usePathname, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
@@ -26,19 +26,38 @@ const queryClient = new QueryClient();
 function RootLayoutNav() {
   const { session, isLoading, isPasswordRecovery } = useAuth();
   const colors = useColors();
+  const pathname = usePathname();
+  const segments = useSegments();
 
   useEffect(() => {
     if (isLoading) return;
+
+    // Password reset from email → stay on / force the set-password screen
     if (isPasswordRecovery) {
-      router.replace("/reset-password");
+      if (!pathname?.includes("reset-password")) {
+        router.replace("/reset-password");
+      }
       return;
     }
+
+    // Already on reset screen (e.g. waiting for tokens) — don't bounce to login
+    if (pathname?.includes("reset-password")) {
+      return;
+    }
+
+    const inAuthGroup = segments[0] === "(auth)";
+
     if (!session) {
-      router.replace("/(auth)/login");
-    } else {
+      if (!inAuthGroup) {
+        router.replace("/(auth)/login");
+      }
+      return;
+    }
+
+    if (inAuthGroup || !segments[0]) {
       router.replace("/(tabs)");
     }
-  }, [session, isLoading, isPasswordRecovery]);
+  }, [session, isLoading, isPasswordRecovery, pathname, segments]);
 
   if (isLoading) {
     return (
@@ -59,7 +78,7 @@ function RootLayoutNav() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="(auth)" />
-      <Stack.Screen name="reset-password" />
+      <Stack.Screen name="reset-password" options={{ gestureEnabled: false }} />
     </Stack>
   );
 }

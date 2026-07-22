@@ -11,8 +11,12 @@ import React, {
 import { Platform } from "react-native";
 
 import {
+  clearAuthParamsFromUrl,
   getAuthRedirectUrl,
+  getCurrentWebUrl,
   parseAuthCallbackUrl,
+  urlHasAuthParams,
+  urlIsPasswordRecovery,
 } from "@/lib/authRedirect";
 import { supabase } from "@/lib/supabase";
 
@@ -37,22 +41,37 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function initialRecoveryFromUrl(): boolean {
+  const webUrl = getCurrentWebUrl();
+  if (urlIsPasswordRecovery(webUrl)) return true;
+  if (webUrl?.includes("reset-password") && urlHasAuthParams(webUrl)) return true;
+  return false;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
+  // Set synchronously so root nav does not bounce to login before tokens apply
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(
+    initialRecoveryFromUrl
+  );
 
   const createSessionFromUrl = useCallback(async (url: string) => {
+    if (!urlHasAuthParams(url)) return null;
+
+    const isRecovery = urlIsPasswordRecovery(url);
+    if (isRecovery) setIsPasswordRecovery(true);
+
     const { accessToken, refreshToken, type, code } = parseAuthCallbackUrl(url);
 
     if (code) {
       const { error } = await supabase.auth.exchangeCodeForSession(code);
       if (error) return error.message;
-      // PKCE recovery still needs the recovery flag for routing
-      if (type === "recovery" || url.includes("type=recovery")) {
+      if (isRecovery || type === "recovery" || url.includes("reset-password")) {
         setIsPasswordRecovery(true);
       }
+      clearAuthParamsFromUrl();
       return null;
     }
 
@@ -62,10 +81,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         refresh_token: refreshToken,
       });
       if (error) return error.message;
-      // setSession often emits SIGNED_IN, not PASSWORD_RECOVERY — set flag manually
-      if (type === "recovery") {
+      // setSession often emits SIGNED_IN, not PASSWORD_RECOVERY
+      if (isRecovery || type === "recovery") {
         setIsPasswordRecovery(true);
       }
+      clearAuthParamsFromUrl();
       return null;
     }
 
@@ -73,18 +93,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setIsLoading(false);
-    });
+    let cancelled = false;
 
-    // Listen for auth state changes
+    async function initAuth() {
+      try {
+        // 1) Consume recovery / OAuth tokens BEFORE unlocking navigation
+        const webUrl = getCurrentWebUrl();
+        if (webUrl && urlHasAuthParams(webUrl)) {
+          await createSessionFromUrl(webUrl);
+        } else {
+          const initialUrl = await Linking.getInitialURL();
+          if (initialUrl && urlHasAuthParams(initialUrl)) {
+            if (urlIsPasswordRecovery(initialUrl)) {
+              setIsPasswordRecovery(true);
+            }
+            await createSessionFromUrl(initialUrl);
+          }
+        }
+
+        if (cancelled) return;
+
+        const { data: { session: next } } = await supabase.auth.getSession();
+        if (cancelled) return;
+        setSession(next);
+        setUser(next?.user ?? null);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+
+    void initAuth();
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
+      (event, nextSession) => {
+        setSession(nextSession);
+        setUser(nextSession?.user ?? null);
         if (event === "PASSWORD_RECOVERY") {
           setIsPasswordRecovery(true);
         } else if (event === "USER_UPDATED" || event === "SIGNED_OUT") {
@@ -93,28 +136,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     );
 
-    // Native + cold-start: apply tokens from password-reset / OAuth deep links
-    const handleUrl = (url: string | null) => {
-      if (!url) return;
+    const linkSub = Linking.addEventListener("url", ({ url }) => {
+      if (urlIsPasswordRecovery(url)) setIsPasswordRecovery(true);
       void createSessionFromUrl(url);
-    };
-
-    Linking.getInitialURL().then(handleUrl);
-    const linkSub = Linking.addEventListener("url", ({ url }) => handleUrl(url));
-
-    // Web fallback when detectSessionInUrl already ran or hash is still present
-    if (Platform.OS === "web" && typeof window !== "undefined") {
-      const href = window.location.href;
-      if (
-        href.includes("access_token=") ||
-        href.includes("type=recovery") ||
-        href.includes("code=")
-      ) {
-        void createSessionFromUrl(href);
-      }
-    }
+    });
 
     return () => {
+      cancelled = true;
       subscription.unsubscribe();
       linkSub.remove();
     };
@@ -195,6 +223,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const resetPasswordForEmail = useCallback(
     async (email: string): Promise<string | null> => {
+      // Always send users to the dedicated reset screen (web + native)
       const redirectTo = getAuthRedirectUrl("/reset-password");
       if (__DEV__) {
         console.log("[auth] password reset redirectTo:", redirectTo);

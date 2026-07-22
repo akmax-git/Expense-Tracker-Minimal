@@ -1,11 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
 import * as WebBrowser from "expo-web-browser";
 import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Modal,
   Platform,
   Pressable,
@@ -18,6 +20,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { CategoryGrid } from "@/components/CategoryGrid";
+import { useAuth } from "@/context/AuthContext";
 import {
   Expense,
   dateToString,
@@ -25,6 +28,7 @@ import {
   useExpenses,
 } from "@/context/ExpenseContext";
 import { useColors } from "@/hooks/useColors";
+import { uploadBill } from "@/lib/uploadBill";
 import { exportExpensesToExcel } from "@/utils/exportExpenses";
 
 const GREEN = "#00C853";
@@ -63,6 +67,7 @@ function formatDateFull(dateStr: string): string {
 export default function RecordsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   const { expenses, allCategories, deleteExpense, addExpense, getCategoryInfo } =
     useExpenses();
 
@@ -76,6 +81,10 @@ export default function RecordsScreen() {
   const [editCategory, setEditCategory] = useState("");
   const [editNote, setEditNote] = useState("");
   const [editDate, setEditDate] = useState("");
+  const [editBillUri, setEditBillUri] = useState<string | null>(null);
+  const [editBillMime, setEditBillMime] = useState<string | null>(null);
+  const [editBillIsNew, setEditBillIsNew] = useState(false);
+  const [editBillCleared, setEditBillCleared] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -109,7 +118,52 @@ export default function RecordsScreen() {
     setEditCategory(expense.category);
     setEditNote(expense.note);
     setEditDate(expense.date);
+    setEditBillUri(expense.billUrl ?? null);
+    setEditBillMime(null);
+    setEditBillIsNew(false);
+    setEditBillCleared(false);
     setShowEdit(true);
+  }
+
+  function closeEdit() {
+    setShowEdit(false);
+    setEditTarget(null);
+    setEditBillUri(null);
+    setEditBillMime(null);
+    setEditBillIsNew(false);
+    setEditBillCleared(false);
+  }
+
+  async function pickEditBill() {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(
+        "Permission needed",
+        "Allow photo library access to attach a bill."
+      );
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      quality: 0.75,
+      allowsEditing: false,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      setEditBillUri(result.assets[0].uri);
+      setEditBillMime(result.assets[0].mimeType ?? null);
+      setEditBillIsNew(true);
+      setEditBillCleared(false);
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  }
+
+  function clearEditBill() {
+    setEditBillUri(null);
+    setEditBillMime(null);
+    setEditBillIsNew(false);
+    setEditBillCleared(true);
   }
 
   async function handleDelete(expense: Expense) {
@@ -132,23 +186,37 @@ export default function RecordsScreen() {
   }
 
   async function handleSaveEdit() {
-    if (!editTarget) return;
+    if (!editTarget || !user) return;
     const amount = parseFloat(editAmount);
     if (!amount || amount <= 0) return;
     setEditSaving(true);
-    // Delete old and re-add with new data (updateExpense pattern)
-    await deleteExpense(editTarget.id);
-    await addExpense({
-      amount,
-      category: editCategory,
-      note: editNote,
-      date: editDate,
-      billUrl: editTarget.billUrl ?? null,
-    });
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setEditSaving(false);
-    setShowEdit(false);
-    setEditTarget(null);
+    try {
+      let billUrl: string | null = editTarget.billUrl ?? null;
+      if (editBillCleared) {
+        billUrl = null;
+      } else if (editBillIsNew && editBillUri) {
+        billUrl = await uploadBill(user.id, editBillUri, editBillMime);
+      }
+
+      // Delete old and re-add with new data (updateExpense pattern)
+      await deleteExpense(editTarget.id);
+      await addExpense({
+        amount,
+        category: editCategory,
+        note: editNote,
+        date: editDate,
+        billUrl,
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      closeEdit();
+    } catch (err: any) {
+      Alert.alert(
+        "Could not save",
+        err?.message ?? "Something went wrong. Please try again."
+      );
+    } finally {
+      setEditSaving(false);
+    }
   }
 
   async function handleExport() {
@@ -285,12 +353,12 @@ export default function RecordsScreen() {
         visible={showEdit}
         animationType="slide"
         presentationStyle="pageSheet"
-        onRequestClose={() => setShowEdit(false)}
+        onRequestClose={closeEdit}
       >
         <View style={[styles.modalRoot, { backgroundColor: colors.background }]}>
           {/* Modal header */}
           <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-            <Pressable onPress={() => setShowEdit(false)} hitSlop={8}>
+            <Pressable onPress={closeEdit} hitSlop={8}>
               <Text style={[styles.modalCancel, { color: colors.mutedForeground }]}>
                 Cancel
               </Text>
@@ -394,6 +462,75 @@ export default function RecordsScreen() {
                 multiline
                 numberOfLines={2}
               />
+            </View>
+
+            {/* Bill upload */}
+            <View style={styles.editSection}>
+              <Text style={[styles.editSectionLabel, { color: colors.mutedForeground }]}>
+                BILL / RECEIPT (OPTIONAL)
+              </Text>
+              {editBillUri ? (
+                <View
+                  style={[
+                    styles.billPreview,
+                    { backgroundColor: colors.card, borderColor: colors.border },
+                  ]}
+                >
+                  <Image source={{ uri: editBillUri }} style={styles.billImage} />
+                  <View style={styles.billActions}>
+                    <Pressable
+                      onPress={pickEditBill}
+                      style={[styles.billActionBtn, { backgroundColor: colors.secondary }]}
+                    >
+                      <Ionicons name="swap-horizontal" size={16} color={colors.primary} />
+                      <Text style={[styles.billActionText, { color: colors.primary }]}>
+                        Change
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={clearEditBill}
+                      style={[styles.billActionBtn, { backgroundColor: "#FF475722" }]}
+                    >
+                      <Ionicons name="trash-outline" size={16} color="#FF4757" />
+                      <Text style={[styles.billActionText, { color: "#FF4757" }]}>
+                        Remove
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : (
+                <Pressable
+                  onPress={pickEditBill}
+                  style={[
+                    styles.billUpload,
+                    { backgroundColor: colors.card, borderColor: colors.border },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.billUploadIcon,
+                      { backgroundColor: colors.secondary },
+                    ]}
+                  >
+                    <Ionicons name="camera-outline" size={22} color={colors.primary} />
+                  </View>
+                  <View style={styles.billUploadText}>
+                    <Text style={[styles.billUploadTitle, { color: colors.foreground }]}>
+                      Upload bill photo
+                    </Text>
+                    <Text
+                      style={[styles.billUploadHint, { color: colors.mutedForeground }]}
+                    >
+                      Keep a copy of the receipt for your records
+                    </Text>
+                  </View>
+                  <Ionicons
+                    name="cloud-upload-outline"
+                    size={20}
+                    color={colors.mutedForeground}
+                  />
+                </Pressable>
+              )}
             </View>
 
             {/* Save button */}
@@ -801,6 +938,62 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     minHeight: 70,
     textAlignVertical: "top",
+  },
+  billUpload: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 14,
+    borderStyle: "dashed",
+    padding: 14,
+  },
+  billUploadIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  billUploadText: {
+    flex: 1,
+    gap: 2,
+  },
+  billUploadTitle: {
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
+  },
+  billUploadHint: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+  },
+  billPreview: {
+    borderWidth: 1,
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+  billImage: {
+    width: "100%",
+    height: 180,
+    resizeMode: "cover",
+  },
+  billActions: {
+    flexDirection: "row",
+    gap: 8,
+    padding: 10,
+  },
+  billActionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    height: 38,
+    borderRadius: 10,
+  },
+  billActionText: {
+    fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
   },
   saveBtn: {
     height: 54,

@@ -21,6 +21,38 @@ export function getAuthRedirectUrl(path: string): string {
   return Linking.createURL(normalized);
 }
 
+/** Current browser href, or null on native. */
+export function getCurrentWebUrl(): string | null {
+  if (Platform.OS !== "web" || typeof window === "undefined") return null;
+  return window.location.href;
+}
+
+/** True when the URL carries auth tokens / recovery markers. */
+export function urlHasAuthParams(url: string | null | undefined): boolean {
+  if (!url) return false;
+  return (
+    url.includes("access_token=") ||
+    url.includes("refresh_token=") ||
+    url.includes("type=recovery") ||
+    url.includes("code=") ||
+    /[?#&]type=recovery\b/.test(url)
+  );
+}
+
+/** True when this URL is a password-recovery callback. */
+export function urlIsPasswordRecovery(url: string | null | undefined): boolean {
+  if (!url) return false;
+  if (url.includes("type=recovery")) return true;
+  // Landing on /reset-password with a PKCE code is always recovery
+  try {
+    const path = url.split("?")[0]?.split("#")[0] ?? "";
+    if (path.includes("reset-password") && url.includes("code=")) return true;
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
 /** Parse access/refresh tokens or PKCE code from an auth callback URL. */
 export function parseAuthCallbackUrl(url: string): {
   accessToken: string | null;
@@ -51,5 +83,28 @@ export function parseAuthCallbackUrl(url: string): {
       type: null,
       code: null,
     };
+  }
+}
+
+/** Strip auth tokens from the browser URL so a refresh doesn't re-process them. */
+export function clearAuthParamsFromUrl(): void {
+  if (Platform.OS !== "web" || typeof window === "undefined") return;
+  try {
+    const url = new URL(window.location.href);
+    url.hash = "";
+    [
+      "access_token",
+      "refresh_token",
+      "expires_in",
+      "expires_at",
+      "token_type",
+      "type",
+      "code",
+      "provider_token",
+      "provider_refresh_token",
+    ].forEach((key) => url.searchParams.delete(key));
+    window.history.replaceState({}, document.title, url.pathname + url.search);
+  } catch {
+    /* ignore */
   }
 }

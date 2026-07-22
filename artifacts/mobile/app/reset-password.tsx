@@ -27,7 +27,7 @@ const ERROR_RED = "#EF4444";
 
 export default function ResetPasswordScreen() {
   const insets = useSafeAreaInsets();
-  const { updatePassword } = useAuth();
+  const { updatePassword, session, isLoading, isPasswordRecovery } = useAuth();
 
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -39,7 +39,14 @@ export default function ResetPasswordScreen() {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
+  const linkReady = !!session && (isPasswordRecovery || done);
+  const linkInvalid = !isLoading && !session && !done;
+
   async function handleReset() {
+    if (!session) {
+      setError("Reset link expired or invalid. Please request a new one.");
+      return;
+    }
     if (!password || !confirm) {
       setError("Please fill in both fields.");
       return;
@@ -110,6 +117,38 @@ export default function ResetPasswordScreen() {
                   style={styles.primaryBtn}
                 >
                   <Text style={styles.primaryBtnText}>Go to Dashboard →</Text>
+                </LinearGradient>
+              </Pressable>
+            </View>
+          ) : isLoading || (isPasswordRecovery && !session) ? (
+            <View style={styles.successBox}>
+              <ActivityIndicator color={BLUE} size="large" />
+              <Text style={styles.successTitle}>Verifying reset link…</Text>
+              <Text style={styles.successText}>
+                Please wait while we open the password form.
+              </Text>
+            </View>
+          ) : linkInvalid ? (
+            <View style={styles.successBox}>
+              <Text style={styles.successIcon}>⚠</Text>
+              <Text style={styles.successTitle}>Link expired or invalid</Text>
+              <Text style={styles.successText}>
+                This reset link is no longer valid. Request a new one from the
+                login screen.
+              </Text>
+              <Pressable
+                onPress={() => router.replace("/(auth)/forgot-password")}
+                style={({ pressed }) => [
+                  { opacity: pressed ? 0.85 : 1, marginTop: 8, width: "100%" },
+                ]}
+              >
+                <LinearGradient
+                  colors={[GREEN, "#00A844", BLUE_DARK]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.primaryBtn}
+                >
+                  <Text style={styles.primaryBtnText}>Request new link →</Text>
                 </LinearGradient>
               </Pressable>
             </View>
@@ -196,9 +235,12 @@ export default function ResetPasswordScreen() {
 
               <Pressable
                 onPress={handleReset}
-                disabled={loading}
+                disabled={loading || !linkReady}
                 style={({ pressed }) => [
-                  { opacity: pressed || loading ? 0.85 : 1, marginTop: 8 },
+                  {
+                    opacity: pressed || loading || !linkReady ? 0.85 : 1,
+                    marginTop: 8,
+                  },
                 ]}
               >
                 <LinearGradient
