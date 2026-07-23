@@ -1,6 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
 import * as WebBrowser from "expo-web-browser";
 import React, { useMemo, useState } from "react";
@@ -29,6 +28,7 @@ import {
 } from "@/context/ExpenseContext";
 import { useManager } from "@/context/ManagerContext";
 import { useColors } from "@/hooks/useColors";
+import { billDisplayName, isImageBill, pickBillFile } from "@/lib/pickBill";
 import { uploadBill } from "@/lib/uploadBill";
 import { exportExpensesToExcel } from "@/utils/exportExpenses";
 
@@ -85,6 +85,7 @@ export default function RecordsScreen() {
   const [editDate, setEditDate] = useState("");
   const [editBillUri, setEditBillUri] = useState<string | null>(null);
   const [editBillMime, setEditBillMime] = useState<string | null>(null);
+  const [editBillName, setEditBillName] = useState<string | null>(null);
   const [editBillIsNew, setEditBillIsNew] = useState(false);
   const [editBillCleared, setEditBillCleared] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
@@ -130,6 +131,7 @@ export default function RecordsScreen() {
     setEditDate(expense.date);
     setEditBillUri(expense.billUrl ?? null);
     setEditBillMime(null);
+    setEditBillName(null);
     setEditBillIsNew(false);
     setEditBillCleared(false);
     setShowEdit(true);
@@ -140,38 +142,33 @@ export default function RecordsScreen() {
     setEditTarget(null);
     setEditBillUri(null);
     setEditBillMime(null);
+    setEditBillName(null);
     setEditBillIsNew(false);
     setEditBillCleared(false);
   }
 
   async function pickEditBill() {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert(
-        "Permission needed",
-        "Allow photo library access to attach a bill."
-      );
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      quality: 0.75,
-      allowsEditing: false,
-    });
-
-    if (!result.canceled && result.assets[0]) {
-      setEditBillUri(result.assets[0].uri);
-      setEditBillMime(result.assets[0].mimeType ?? null);
+    try {
+      const picked = await pickBillFile();
+      if (!picked) return;
+      setEditBillUri(picked.uri);
+      setEditBillMime(picked.mimeType);
+      setEditBillName(picked.name);
       setEditBillIsNew(true);
       setEditBillCleared(false);
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (err: any) {
+      Alert.alert(
+        "Could not open file picker",
+        err?.message ?? "Please try again."
+      );
     }
   }
 
   function clearEditBill() {
     setEditBillUri(null);
     setEditBillMime(null);
+    setEditBillName(null);
     setEditBillIsNew(false);
     setEditBillCleared(true);
   }
@@ -495,7 +492,28 @@ export default function RecordsScreen() {
                     { backgroundColor: colors.card, borderColor: colors.border },
                   ]}
                 >
-                  <Image source={{ uri: editBillUri }} style={styles.billImage} />
+                  {isImageBill(editBillUri, editBillMime) ? (
+                    <Image source={{ uri: editBillUri }} style={styles.billImage} />
+                  ) : (
+                    <View
+                      style={[
+                        styles.billFilePreview,
+                        { backgroundColor: colors.secondary },
+                      ]}
+                    >
+                      <Ionicons
+                        name="document-text-outline"
+                        size={36}
+                        color={colors.primary}
+                      />
+                      <Text
+                        style={[styles.billFileName, { color: colors.foreground }]}
+                        numberOfLines={2}
+                      >
+                        {billDisplayName(editBillUri, editBillName)}
+                      </Text>
+                    </View>
+                  )}
                   <View style={styles.billActions}>
                     <Pressable
                       onPress={pickEditBill}
@@ -531,16 +549,20 @@ export default function RecordsScreen() {
                       { backgroundColor: colors.secondary },
                     ]}
                   >
-                    <Ionicons name="camera-outline" size={22} color={colors.primary} />
+                    <Ionicons
+                      name="document-attach-outline"
+                      size={22}
+                      color={colors.primary}
+                    />
                   </View>
                   <View style={styles.billUploadText}>
                     <Text style={[styles.billUploadTitle, { color: colors.foreground }]}>
-                      Upload bill photo
+                      Upload bill / receipt
                     </Text>
                     <Text
                       style={[styles.billUploadHint, { color: colors.mutedForeground }]}
                     >
-                      Keep a copy of the receipt for your records
+                      Images, PDF, or Word/Excel documents
                     </Text>
                   </View>
                   <Ionicons
@@ -1003,6 +1025,19 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 180,
     resizeMode: "cover",
+  },
+  billFilePreview: {
+    minHeight: 120,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 24,
+  },
+  billFileName: {
+    fontSize: 14,
+    fontFamily: "Inter_500Medium",
+    textAlign: "center",
   },
   billActions: {
     flexDirection: "row",

@@ -1,6 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
 import React, { useState } from "react";
 import {
@@ -27,6 +26,7 @@ import {
 } from "@/context/ExpenseContext";
 import { useManager } from "@/context/ManagerContext";
 import { useColors } from "@/hooks/useColors";
+import { billDisplayName, isImageBill, pickBillFile } from "@/lib/pickBill";
 import { uploadBill } from "@/lib/uploadBill";
 
 function todayStr() {
@@ -53,6 +53,7 @@ export default function AddExpenseScreen() {
   const [showCalendar, setShowCalendar] = useState(false);
   const [billUri, setBillUri] = useState<string | null>(null);
   const [billMime, setBillMime] = useState<string | null>(null);
+  const [billName, setBillName] = useState<string | null>(null);
 
   const amount = parseFloat(amountRaw) || 0;
   const canSave = amount > 0 && category && canEdit;
@@ -67,25 +68,18 @@ export default function AddExpenseScreen() {
   const billOwnerId = viewingAs ?? user?.id;
 
   const pickBill = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert(
-        "Permission needed",
-        "Allow photo library access to attach a bill."
-      );
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      quality: 0.75,
-      allowsEditing: false,
-    });
-
-    if (!result.canceled && result.assets[0]) {
-      setBillUri(result.assets[0].uri);
-      setBillMime(result.assets[0].mimeType ?? null);
+    try {
+      const picked = await pickBillFile();
+      if (!picked) return;
+      setBillUri(picked.uri);
+      setBillMime(picked.mimeType);
+      setBillName(picked.name);
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (err: any) {
+      Alert.alert(
+        "Could not open file picker",
+        err?.message ?? "Please try again."
+      );
     }
   };
 
@@ -117,6 +111,7 @@ export default function AddExpenseScreen() {
       setDate(todayStr());
       setBillUri(null);
       setBillMime(null);
+      setBillName(null);
       router.push("/(tabs)/");
     } catch (err: any) {
       Alert.alert(
@@ -325,7 +320,28 @@ export default function AddExpenseScreen() {
                 { backgroundColor: colors.card, borderColor: colors.border },
               ]}
             >
-              <Image source={{ uri: billUri }} style={styles.billImage} />
+              {isImageBill(billUri, billMime) ? (
+                <Image source={{ uri: billUri }} style={styles.billImage} />
+              ) : (
+                <View
+                  style={[
+                    styles.billFilePreview,
+                    { backgroundColor: colors.secondary },
+                  ]}
+                >
+                  <Ionicons
+                    name="document-text-outline"
+                    size={36}
+                    color={colors.primary}
+                  />
+                  <Text
+                    style={[styles.billFileName, { color: colors.foreground }]}
+                    numberOfLines={2}
+                  >
+                    {billDisplayName(billUri, billName)}
+                  </Text>
+                </View>
+              )}
               <View style={styles.billActions}>
                 <Pressable
                   onPress={pickBill}
@@ -340,6 +356,7 @@ export default function AddExpenseScreen() {
                   onPress={() => {
                     setBillUri(null);
                     setBillMime(null);
+                    setBillName(null);
                   }}
                   style={[styles.billActionBtn, { backgroundColor: "#FF475722" }]}
                 >
@@ -364,16 +381,20 @@ export default function AddExpenseScreen() {
                   { backgroundColor: colors.secondary },
                 ]}
               >
-                <Ionicons name="camera-outline" size={22} color={colors.primary} />
+                <Ionicons
+                  name="document-attach-outline"
+                  size={22}
+                  color={colors.primary}
+                />
               </View>
               <View style={styles.billUploadText}>
                 <Text style={[styles.billUploadTitle, { color: colors.foreground }]}>
-                  Upload bill photo
+                  Upload bill / receipt
                 </Text>
                 <Text
                   style={[styles.billUploadHint, { color: colors.mutedForeground }]}
                 >
-                  Keep a copy of the receipt for your records
+                  Images, PDF, or Word/Excel documents
                 </Text>
               </View>
               <Ionicons
@@ -581,6 +602,19 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 180,
     resizeMode: "cover",
+  },
+  billFilePreview: {
+    minHeight: 120,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 24,
+  },
+  billFileName: {
+    fontSize: 14,
+    fontFamily: "Inter_500Medium",
+    textAlign: "center",
   },
   billActions: {
     flexDirection: "row",

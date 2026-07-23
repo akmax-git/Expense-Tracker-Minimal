@@ -57,6 +57,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.2",
+    "expo-document-picker": "~14.0.8",
     "expo-file-system": "^57.0.1",
     "expo-sharing": "^57.0.6",
     "xlsx": "^0.18.5"
