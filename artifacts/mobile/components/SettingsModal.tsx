@@ -17,12 +17,57 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "@/context/AuthContext";
 import {
+  CategoryInfo,
+  isDefaultCategory,
+  useExpenses,
+} from "@/context/ExpenseContext";
+import {
   MANAGER_PERMISSIONS,
   ManagerPermission,
   permissionLabel,
   useManager,
 } from "@/context/ManagerContext";
 import { useColors } from "@/hooks/useColors";
+
+const CATEGORY_ICONS = [
+  "restaurant-outline",
+  "cafe-outline",
+  "car-outline",
+  "bag-handle-outline",
+  "film-outline",
+  "home-outline",
+  "laptop-outline",
+  "airplane-outline",
+  "grid-outline",
+  "medical-outline",
+  "fitness-outline",
+  "school-outline",
+  "gift-outline",
+  "card-outline",
+  "phone-portrait-outline",
+  "paw-outline",
+  "construct-outline",
+  "flash-outline",
+  "water-outline",
+  "musical-notes-outline",
+] as const;
+
+const CATEGORY_COLORS = [
+  "#FF9F43",
+  "#A29BFE",
+  "#74B9FF",
+  "#FD79A8",
+  "#FDCB6E",
+  "#55EFC4",
+  "#00CEC9",
+  "#6C5CE7",
+  "#636E72",
+  "#E17055",
+  "#00B894",
+  "#0984E3",
+  "#D63031",
+  "#2D3436",
+];
 
 interface Props {
   visible: boolean;
@@ -121,6 +166,7 @@ export function SettingsModal({ visible, onClose, currentBudget, onSaveBudget }:
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user, signOut } = useAuth();
+  const { allCategories, addCustomCategory, removeCustomCategory } = useExpenses();
   const {
     myGrants,
     managerOf,
@@ -142,6 +188,14 @@ export function SettingsModal({ visible, onClose, currentBudget, onSaveBudget }:
   const [grantError, setGrantError] = useState<string | null>(null);
   const [showGrantInput, setShowGrantInput] = useState(false);
   const [updatingGrantId, setUpdatingGrantId] = useState<string | null>(null);
+
+  const [showAddCategory, setShowAddCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [newCategoryIcon, setNewCategoryIcon] =
+    useState<string>(CATEGORY_ICONS[0]);
+  const [newCategoryColor, setNewCategoryColor] = useState(CATEGORY_COLORS[0]);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
+  const [savingCategory, setSavingCategory] = useState(false);
 
   const topPadding = Platform.OS === "web" ? 24 : insets.top;
 
@@ -223,6 +277,52 @@ export function SettingsModal({ visible, onClose, currentBudget, onSaveBudget }:
   const handleExitManagerMode = () => {
     setViewingAs(null, null);
     onClose();
+  };
+
+  const resetCategoryForm = () => {
+    setShowAddCategory(false);
+    setNewCategoryName("");
+    setNewCategoryIcon(CATEGORY_ICONS[0]);
+    setNewCategoryColor(CATEGORY_COLORS[0]);
+    setCategoryError(null);
+  };
+
+  const handleAddCategory = async () => {
+    setSavingCategory(true);
+    setCategoryError(null);
+    const err = await addCustomCategory({
+      name: newCategoryName,
+      icon: newCategoryIcon,
+      color: newCategoryColor,
+    });
+    setSavingCategory(false);
+    if (err) {
+      setCategoryError(err);
+      return;
+    }
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    resetCategoryForm();
+  };
+
+  const handleRemoveCategory = async (cat: CategoryInfo) => {
+    if (isDefaultCategory(cat.name)) {
+      notify(
+        "Default category",
+        "Built-in categories stay available so your existing expenses keep working."
+      );
+      return;
+    }
+    const confirmed = await confirmDestructive(
+      "Delete category",
+      `Remove "${cat.name}"? Existing expenses with this category will keep their label.`
+    );
+    if (!confirmed) return;
+    const err = await removeCustomCategory(cat.name);
+    if (err) {
+      notify("Could not delete", err);
+      return;
+    }
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
   };
 
   return (
@@ -325,6 +425,249 @@ export function SettingsModal({ visible, onClose, currentBudget, onSaveBudget }:
                   </Text>
                 </Pressable>
               </View>
+            )}
+          </View>
+
+          {/* Categories */}
+          <SectionHeader title="CATEGORIES" colors={colors} />
+          <View
+            style={[
+              styles.managerCard,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <View style={styles.managerCardHeader}>
+              <Ionicons name="pricetags-outline" size={18} color={colors.primary} />
+              <Text style={[styles.managerCardTitle, { color: colors.foreground }]}>
+                Expense categories
+              </Text>
+            </View>
+            <Text style={[styles.managerCardSub, { color: colors.mutedForeground }]}>
+              Default categories stay for your existing expenses. Add your own
+              when you need more.
+            </Text>
+
+            <View style={{ marginTop: 10, gap: 8 }}>
+              {allCategories.map((cat) => {
+                const isDefault = isDefaultCategory(cat.name);
+                return (
+                  <View
+                    key={cat.name}
+                    style={[
+                      styles.categoryRow,
+                      {
+                        borderColor: colors.border,
+                        backgroundColor: colors.background,
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.categoryIconWrap,
+                        { backgroundColor: cat.color + "22" },
+                      ]}
+                    >
+                      <Ionicons
+                        name={cat.icon as any}
+                        size={18}
+                        color={cat.color}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={[styles.grantEmail, { color: colors.foreground }]}
+                        numberOfLines={1}
+                      >
+                        {cat.name}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.grantStatus,
+                          { color: colors.mutedForeground },
+                        ]}
+                      >
+                        {isDefault ? "Default" : "Custom"}
+                      </Text>
+                    </View>
+                    {!isDefault ? (
+                      <Pressable
+                        onPress={() => handleRemoveCategory(cat)}
+                        hitSlop={10}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Delete ${cat.name}`}
+                      >
+                        <Ionicons
+                          name="trash-outline"
+                          size={18}
+                          color={colors.destructive}
+                        />
+                      </Pressable>
+                    ) : (
+                      <Ionicons
+                        name="lock-closed-outline"
+                        size={16}
+                        color={colors.mutedForeground}
+                      />
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+
+            {showAddCategory ? (
+              <View style={{ marginTop: 12, gap: 10 }}>
+                <TextInput
+                  style={[
+                    styles.emailInput,
+                    {
+                      color: colors.foreground,
+                      borderColor: categoryError
+                        ? colors.destructive
+                        : colors.border,
+                      backgroundColor: colors.background,
+                    },
+                  ]}
+                  value={newCategoryName}
+                  onChangeText={(t) => {
+                    setNewCategoryName(t);
+                    setCategoryError(null);
+                  }}
+                  placeholder="Category name (e.g. Medical)"
+                  placeholderTextColor={colors.mutedForeground}
+                  autoCapitalize="words"
+                  maxLength={24}
+                  returnKeyType="done"
+                  onSubmitEditing={handleAddCategory}
+                />
+
+                <Text
+                  style={[styles.accessLevelLabel, { color: colors.mutedForeground }]}
+                >
+                  ICON
+                </Text>
+                <View style={styles.pickerWrap}>
+                  {CATEGORY_ICONS.map((icon) => {
+                    const selected = newCategoryIcon === icon;
+                    return (
+                      <Pressable
+                        key={icon}
+                        onPress={() => setNewCategoryIcon(icon)}
+                        style={[
+                          styles.iconPick,
+                          {
+                            borderColor: selected
+                              ? newCategoryColor
+                              : colors.border,
+                            backgroundColor: selected
+                              ? newCategoryColor + "22"
+                              : colors.background,
+                          },
+                        ]}
+                      >
+                        <Ionicons
+                          name={icon as any}
+                          size={18}
+                          color={selected ? newCategoryColor : colors.foreground}
+                        />
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                <Text
+                  style={[styles.accessLevelLabel, { color: colors.mutedForeground }]}
+                >
+                  COLOR
+                </Text>
+                <View style={styles.pickerWrap}>
+                  {CATEGORY_COLORS.map((color) => {
+                    const selected = newCategoryColor === color;
+                    return (
+                      <Pressable
+                        key={color}
+                        onPress={() => setNewCategoryColor(color)}
+                        style={[
+                          styles.colorPick,
+                          {
+                            backgroundColor: color,
+                            borderColor: selected
+                              ? colors.foreground
+                              : "transparent",
+                          },
+                        ]}
+                      >
+                        {selected ? (
+                          <Ionicons name="checkmark" size={14} color="#fff" />
+                        ) : null}
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                {categoryError ? (
+                  <Text style={[styles.errorText, { color: colors.destructive }]}>
+                    {categoryError}
+                  </Text>
+                ) : null}
+
+                <View style={styles.grantBtnRow}>
+                  <Pressable
+                    onPress={resetCategoryForm}
+                    style={[styles.cancelBtn, { borderColor: colors.border }]}
+                  >
+                    <Text
+                      style={[
+                        styles.cancelBtnText,
+                        { color: colors.mutedForeground },
+                      ]}
+                    >
+                      Cancel
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={handleAddCategory}
+                    disabled={savingCategory || !newCategoryName.trim()}
+                    style={[
+                      styles.grantBtn,
+                      {
+                        backgroundColor: newCategoryName.trim()
+                          ? colors.primary
+                          : colors.muted,
+                      },
+                    ]}
+                  >
+                    {savingCategory ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text
+                        style={[
+                          styles.grantBtnText,
+                          { color: colors.primaryForeground },
+                        ]}
+                      >
+                        Add category
+                      </Text>
+                    )}
+                  </Pressable>
+                </View>
+              </View>
+            ) : (
+              <Pressable
+                onPress={() => setShowAddCategory(true)}
+                style={[
+                  styles.addManagerBtn,
+                  { borderColor: colors.primary + "40" },
+                ]}
+              >
+                <Ionicons
+                  name="add-circle-outline"
+                  size={18}
+                  color={colors.primary}
+                />
+                <Text style={[styles.addManagerText, { color: colors.primary }]}>
+                  Add category
+                </Text>
+              </Pressable>
             )}
           </View>
 
@@ -1060,6 +1403,42 @@ const styles = StyleSheet.create({
   exitManagerText: {
     fontSize: 13,
     fontFamily: "Inter_500Medium",
+  },
+  categoryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 10,
+  },
+  categoryIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pickerWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  iconPick: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  colorPick: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
   },
   row: {
     flexDirection: "row",

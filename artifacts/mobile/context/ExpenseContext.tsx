@@ -56,6 +56,16 @@ const LOCAL_KEYS = {
   CUSTOM_CATEGORIES: "@exptrack_custom_categories",
 };
 
+function customCategoriesKey(userId: string) {
+  return `${LOCAL_KEYS.CUSTOM_CATEGORIES}:${userId}`;
+}
+
+export function isDefaultCategory(name: string): boolean {
+  return DEFAULT_CATEGORIES.some(
+    (c) => c.name.toLowerCase() === name.trim().toLowerCase()
+  );
+}
+
 interface ExpenseContextValue {
   expenses: Expense[];
   budgets: MonthBudget[];
@@ -72,7 +82,8 @@ interface ExpenseContextValue {
   getDayExpenses: (date: string) => Expense[];
   addQuickTemplate: (template: Omit<QuickTemplate, "id">) => Promise<void>;
   removeQuickTemplate: (id: string) => Promise<void>;
-  addCustomCategory: (info: CategoryInfo) => Promise<void>;
+  addCustomCategory: (info: CategoryInfo) => Promise<string | null>;
+  removeCustomCategory: (name: string) => Promise<string | null>;
   getCategoryInfo: (name: string) => CategoryInfo | undefined;
 }
 
@@ -147,12 +158,25 @@ export function ExpenseProvider({
       }
 
       try {
-        const [qtStr, ccStr] = await Promise.all([
+        const [qtStr, ccStr, legacyCcStr] = await Promise.all([
           AsyncStorage.getItem(LOCAL_KEYS.QUICK_TEMPLATES),
+          AsyncStorage.getItem(customCategoriesKey(userId)),
           AsyncStorage.getItem(LOCAL_KEYS.CUSTOM_CATEGORIES),
         ]);
         if (qtStr) setQuickTemplates(JSON.parse(qtStr) as QuickTemplate[]);
-        if (ccStr) setCustomCategories(JSON.parse(ccStr) as CategoryInfo[]);
+        if (ccStr) {
+          setCustomCategories(JSON.parse(ccStr) as CategoryInfo[]);
+        } else if (legacyCcStr) {
+          // Migrate older device-wide custom categories into this user
+          const migrated = JSON.parse(legacyCcStr) as CategoryInfo[];
+          setCustomCategories(migrated);
+          AsyncStorage.setItem(
+            customCategoriesKey(userId),
+            JSON.stringify(migrated)
+          ).catch(() => {});
+        } else {
+          setCustomCategories([]);
+        }
       } catch {
         // ignore
       }
@@ -343,19 +367,75 @@ export function ExpenseProvider({
   }, []);
 
   // ─── Custom Categories ────────────────────────────────────────────────────
-
-  const addCustomCategory = useCallback(async (info: CategoryInfo) => {
-    setCustomCategories((prev) => {
-      const updated = [...prev, info];
-      AsyncStorage.setItem(LOCAL_KEYS.CUSTOM_CATEGORIES, JSON.stringify(updated)).catch(() => {});
-      return updated;
-    });
-  }, []);
+  // Defaults stay forever (users already have expenses under them).
+  // Only user-created categories can be added/removed.
 
   const allCategories = [...DEFAULT_CATEGORIES, ...customCategories];
 
+  const addCustomCategory = useCallback(
+    async (info: CategoryInfo): Promise<string | null> => {
+      const name = info.name.trim();
+      if (!name) return "Enter a category name.";
+      if (name.length > 24) return "Name must be 24 characters or less.";
+
+      const exists = [...DEFAULT_CATEGORIES, ...customCategories].some(
+        (c) => c.name.toLowerCase() === name.toLowerCase()
+      );
+      if (exists) return "A category with this name already exists.";
+
+      const next: CategoryInfo = {
+        name,
+        icon: info.icon || "grid-outline",
+        color: info.color || "#636E72",
+      };
+
+      const updated = [...customCategories, next];
+      setCustomCategories(updated);
+      try {
+        await AsyncStorage.setItem(
+          customCategoriesKey(userId),
+          JSON.stringify(updated)
+        );
+      } catch {
+        // keep in-memory even if persist fails
+      }
+      return null;
+    },
+    [customCategories, userId]
+  );
+
+  const removeCustomCategory = useCallback(
+    async (name: string): Promise<string | null> => {
+      if (isDefaultCategory(name)) {
+        return "Default categories cannot be deleted.";
+      }
+      const updated = customCategories.filter(
+        (c) => c.name.toLowerCase() !== name.trim().toLowerCase()
+      );
+      if (updated.length === customCategories.length) {
+        return "Category not found.";
+      }
+      setCustomCategories(updated);
+      try {
+        await AsyncStorage.setItem(
+          customCategoriesKey(userId),
+          JSON.stringify(updated)
+        );
+      } catch {
+        // ignore
+      }
+      return null;
+    },
+    [customCategories, userId]
+  );
+
   const getCategoryInfo = useCallback(
-    (name: string) => allCategories.find((c) => c.name === name),
+    (name: string) =>
+      allCategories.find((c) => c.name === name) ?? {
+        name,
+        icon: "grid-outline",
+        color: "#636E72",
+      },
     [allCategories]
   );
 
@@ -378,6 +458,7 @@ export function ExpenseProvider({
         addQuickTemplate,
         removeQuickTemplate,
         addCustomCategory,
+        removeCustomCategory,
         getCategoryInfo,
       }}
     >
