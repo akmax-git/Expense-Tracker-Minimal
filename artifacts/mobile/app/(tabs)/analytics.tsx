@@ -19,62 +19,50 @@ import {
   useExpenses,
 } from "@/context/ExpenseContext";
 import { useColors } from "@/hooks/useColors";
-
-function monthOffset(base: string, offset: number): string {
-  const [y, m] = base.split("-").map(Number);
-  const d = new Date(y, m - 1 + offset, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
+import {
+  categoryBreakdown,
+  dailySeriesLastNDays,
+  monthOffset,
+  sumExpenses,
+} from "@/lib/dashboardInsights";
 
 type Tab = "breakdown" | "trend";
 
 export default function AnalyticsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { getMonthExpenses, getMonthBudget, allCategories, getCategoryInfo } =
+  const { getMonthExpenses, getMonthBudget, getCategoryInfo, expenses } =
     useExpenses();
 
   const [month, setMonth] = useState(currentMonth);
   const [activeTab, setActiveTab] = useState<Tab>("breakdown");
 
-  const expenses = getMonthExpenses(month);
+  const monthExpenses = getMonthExpenses(month);
   const budget = getMonthBudget(month);
-  const totalSpent = expenses.reduce((s, e) => s + e.amount, 0);
+  const totalSpent = sumExpenses(monthExpenses);
 
   const pieData = useMemo<PieSlice[]>(() => {
-    const map: Record<string, number> = {};
-    expenses.forEach((e) => {
-      map[e.category] = (map[e.category] ?? 0) + e.amount;
+    return categoryBreakdown(monthExpenses).map((slice) => {
+      const cat = getCategoryInfo(slice.label);
+      return {
+        label: slice.label,
+        value: slice.value,
+        color: cat?.color ?? "#636E72",
+      };
     });
-    return Object.entries(map)
-      .sort((a, b) => b[1] - a[1])
-      .map(([name, value]) => {
-        const cat = getCategoryInfo(name);
-        return { label: name, value, color: cat?.color ?? "#636E72" };
-      });
-  }, [expenses, getCategoryInfo]);
+  }, [monthExpenses, getCategoryInfo]);
 
   const topCategory = pieData[0];
   const avgDaily = useMemo(() => {
-    if (expenses.length === 0) return 0;
-    const days = new Set(expenses.map((e) => e.date)).size;
+    if (monthExpenses.length === 0) return 0;
+    const days = new Set(monthExpenses.map((e) => e.date)).size;
     return days > 0 ? totalSpent / days : 0;
-  }, [expenses, totalSpent]);
+  }, [monthExpenses, totalSpent]);
 
-  const trendData = useMemo(() => {
-    const now = new Date();
-    const result: { date: string; amount: number }[] = [];
-    for (let i = 29; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(now.getDate() - i);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-      const amount = expenses
-        .filter((e) => e.date === key)
-        .reduce((s, e) => s + e.amount, 0);
-      result.push({ date: key, amount });
-    }
-    return result;
-  }, [expenses]);
+  const trendData = useMemo(
+    () => dailySeriesLastNDays(expenses, 30),
+    [expenses]
+  );
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
@@ -209,7 +197,7 @@ export default function AnalyticsScreen() {
             <View style={[styles.trendStats, { borderTopColor: colors.border }]}>
               <View style={styles.trendStat}>
                 <Text style={[styles.trendStatVal, { color: colors.foreground }]}>
-                  {formatINR(Math.max(...trendData.map((d) => d.amount)))}
+                  {formatINR(Math.max(...trendData.map((d) => d.amount), 0))}
                 </Text>
                 <Text style={[styles.trendStatLabel, { color: colors.mutedForeground }]}>
                   Peak Day
@@ -270,7 +258,7 @@ export default function AnalyticsScreen() {
                       styles.catBar,
                       {
                         backgroundColor: slice.color + "44",
-                        width: `${(slice.value / totalSpent) * 100}%` as any,
+                        width: `${totalSpent > 0 ? (slice.value / totalSpent) * 100 : 0}%` as `${number}%`,
                       },
                     ]}
                   />

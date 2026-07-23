@@ -9,12 +9,17 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BudgetRing } from "@/components/BudgetRing";
+import { CategoryBars } from "@/components/dashboard/CategoryBars";
+import { InsightStatusCard } from "@/components/dashboard/InsightStatusCard";
+import { MonthCompareCard } from "@/components/dashboard/MonthCompareCard";
+import { PaceCard } from "@/components/dashboard/PaceCard";
 import { ExpenseItem } from "@/components/ExpenseItem";
-import { useAuth } from "@/context/AuthContext";
+import { TrendChart } from "@/components/TrendChart";
 import {
   currentMonth,
   formatINR,
@@ -24,30 +29,26 @@ import {
 import { useManager } from "@/context/ManagerContext";
 import { SettingsModal } from "@/components/SettingsModal";
 import { useColors } from "@/hooks/useColors";
-
-function monthOffset(base: string, offset: number): string {
-  const [y, m] = base.split("-").map(Number);
-  const d = new Date(y, m - 1 + offset, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function getDaysRemainingInMonth(): number {
-  const now = new Date();
-  const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  return last.getDate() - now.getDate();
-}
+import {
+  categoryBreakdown,
+  dailySeriesForMonth,
+  monthOffset,
+  monthOverMonth,
+  paceMetrics,
+  statusHeadline,
+  sumExpenses,
+} from "@/lib/dashboardInsights";
 
 export default function DashboardScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
+  const { width: windowWidth } = useWindowDimensions();
   const { viewingAsEmail, isManagerMode, canEdit, activeGrant } = useManager();
   const {
     getMonthExpenses,
     getMonthBudget,
     setMonthBudget,
     quickTemplates,
-    allCategories,
     getCategoryInfo,
     addExpense,
     deleteExpense,
@@ -59,20 +60,40 @@ export default function DashboardScreen() {
   const isCurrentMonth = month === currentMonth();
   const budget = getMonthBudget(month);
   const monthExpenses = getMonthExpenses(month);
-  const spent = monthExpenses.reduce((s, e) => s + e.amount, 0);
+  const prevMonthExpenses = getMonthExpenses(monthOffset(month, -1));
+  const spent = sumExpenses(monthExpenses);
   const remaining = budget - spent;
-  const daysLeft = getDaysRemainingInMonth();
-  const dailyBudget = daysLeft > 0 && remaining > 0 ? remaining / daysLeft : 0;
 
-  const topCategory = useMemo(() => {
-    const map: Record<string, number> = {};
-    monthExpenses.forEach((e) => {
-      map[e.category] = (map[e.category] ?? 0) + e.amount;
-    });
-    return Object.entries(map).sort((a, b) => b[1] - a[1])[0];
-  }, [monthExpenses]);
+  const pace = useMemo(
+    () => paceMetrics({ spent, budget, month }),
+    [spent, budget, month]
+  );
 
+  const compare = useMemo(
+    () => monthOverMonth(spent, sumExpenses(prevMonthExpenses)),
+    [spent, prevMonthExpenses]
+  );
+
+  const topCategories = useMemo(
+    () => categoryBreakdown(monthExpenses, 4),
+    [monthExpenses]
+  );
+
+  const sparkData = useMemo(() => {
+    const full = dailySeriesForMonth(monthExpenses, month);
+    if (!isCurrentMonth) return full;
+    const today = new Date().getDate();
+    return full.slice(0, today);
+  }, [monthExpenses, month, isCurrentMonth]);
+
+  const headline = useMemo(
+    () => statusHeadline(pace, isManagerMode),
+    [pace, isManagerMode]
+  );
+
+  const topCategory = topCategories[0];
   const recentExpenses = monthExpenses.slice(0, 8);
+  const chartWidth = Math.min(windowWidth - 64, 360);
 
   const handleQuickAdd = async (template: (typeof quickTemplates)[0]) => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -185,41 +206,56 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* Smart insight */}
-        {isCurrentMonth && budget > 0 && (
-          <View
-            style={[
-              styles.insightCard,
-              { backgroundColor: colors.primary + "15", borderColor: colors.primary + "30" },
-            ]}
-          >
-            <Ionicons name="bulb-outline" size={18} color={colors.primary} />
-            <View style={{ flex: 1, gap: 2 }}>
-              {dailyBudget > 0 ? (
-                <Text style={[styles.insightText, { color: colors.foreground }]}>
-                  You can spend{" "}
-                  <Text style={{ color: colors.primary, fontFamily: "Inter_700Bold" }}>
-                    {formatINR(Math.round(dailyBudget))}/day
-                  </Text>{" "}
-                  for the next {daysLeft} days.
-                </Text>
-              ) : remaining <= 0 ? (
-                <Text style={[styles.insightText, { color: colors.destructive }]}>
-                  Over budget by {formatINR(Math.abs(remaining))}. Consider cutting back.
-                </Text>
-              ) : (
-                <Text style={[styles.insightText, { color: colors.foreground }]}>
-                  Last day of the month — {formatINR(remaining)} left.
-                </Text>
-              )}
-              {topCategory && (
-                <Text style={[styles.insightSub, { color: colors.mutedForeground }]}>
-                  Biggest: {topCategory[0]} ({formatINR(topCategory[1])})
-                </Text>
-              )}
-            </View>
+        {/* Status insight */}
+        <InsightStatusCard
+          status={budget > 0 ? pace.status : "none"}
+          title={headline.title}
+          message={headline.message}
+          subtitle={
+            topCategory
+              ? `Biggest: ${topCategory.label} (${formatINR(topCategory.value)})`
+              : null
+          }
+        />
+
+        {/* vs Last Month */}
+        <MonthCompareCard compare={compare} />
+
+        {/* Pace */}
+        <PaceCard pace={pace} />
+
+        {/* Top categories */}
+        <CategoryBars
+          slices={topCategories}
+          getCategoryInfo={getCategoryInfo}
+        />
+
+        {/* Month sparkline */}
+        <View
+          style={[
+            styles.sparkCard,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
+          <View style={styles.sparkHeader}>
+            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
+              {isCurrentMonth ? "Daily Spend (MTD)" : "Daily Spend"}
+            </Text>
+            <Pressable
+              onPress={() => router.push("/(tabs)/analytics")}
+              hitSlop={8}
+              style={styles.seeLink}
+            >
+              <Text style={[styles.seeLinkText, { color: colors.primary }]}>
+                Analytics
+              </Text>
+              <Ionicons name="chevron-forward" size={14} color={colors.primary} />
+            </Pressable>
           </View>
-        )}
+          <View style={styles.sparkChart}>
+            <TrendChart data={sparkData} width={chartWidth} height={110} />
+          </View>
+        </View>
 
         {/* Quick add — only when own account or manager has edit/full */}
         {isCurrentMonth && canEdit && quickTemplates.length > 0 && (
@@ -409,22 +445,28 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 8,
   },
-  insightCard: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
-    padding: 14,
-    borderRadius: 14,
+  sparkCard: {
+    borderRadius: 16,
     borderWidth: 1,
+    padding: 14,
+    gap: 8,
   },
-  insightText: {
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
-    lineHeight: 20,
+  sparkHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
-  insightSub: {
+  sparkChart: {
+    alignItems: "center",
+  },
+  seeLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+  },
+  seeLinkText: {
     fontSize: 12,
-    fontFamily: "Inter_400Regular",
+    fontFamily: "Inter_500Medium",
   },
   section: {
     gap: 10,
