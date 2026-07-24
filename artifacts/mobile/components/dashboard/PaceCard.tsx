@@ -35,7 +35,7 @@ export function PaceCard({ pace }: Props) {
         />
         {showAllowance ? (
           <Metric
-            label="Left / day"
+            label="Balance / day"
             value={
               pace.dailyAllowance > 0
                 ? formatINR(Math.round(pace.dailyAllowance))

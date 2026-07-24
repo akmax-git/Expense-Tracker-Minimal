@@ -112,7 +112,7 @@ export default function AnalyticsScreen() {
             colors={colors}
           />
           <StatCard
-            label="Cash Balance"
+            label="Cash Surplus"
             value={formatINR(budget)}
             icon="arrow-down-circle-outline"
             color={colors.accent}

@@ -203,10 +203,10 @@ export function statusHeadline(
 
   if (pace.budget <= 0) {
     return {
-      title: "No Cash Balance",
+      title: "No Cash Surplus",
       message: isManagerMode
-        ? "Add Cash Balance when money is received to start tracking spend against it."
-        : "Add Cash Balance first (boss transfer, salary, etc.). Your available pool is the sum of those entries.",
+        ? "Add Cash Surplus when money is received to start tracking spend against it."
+        : "Add Cash Surplus first (boss transfer, salary, etc.). Cash Balance = Cash Surplus − Spent.",
     };
   }
 

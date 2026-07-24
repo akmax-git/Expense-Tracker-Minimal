@@ -9,7 +9,7 @@ create table if not exists public.incomes (
   user_id     uuid not null references auth.users(id) on delete cascade,
   amount      numeric(12, 2) not null check (amount > 0),
   note        text not null default '',
-  source      text not null default 'Cash Balance',
+  source      text not null default 'Cash Surplus',
   date        text not null,
   created_at  timestamptz not null default now()
 );

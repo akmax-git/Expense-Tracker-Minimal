@@ -114,7 +114,7 @@ export default function AddExpenseScreen() {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         await addIncome({
           amount,
-        source: incomeSource.trim() || "Cash Balance",
+        source: incomeSource.trim() || "Cash Surplus",
           note,
           date,
         });
@@ -168,7 +168,7 @@ export default function AddExpenseScreen() {
         ]}
       >
         <Text style={[styles.title, { color: colors.foreground }]}>
-          {entryType === "income" ? "Add Cash Balance" : "Add Expense"}
+          {entryType === "income" ? "Add Cash Surplus" : "Add Expense"}
         </Text>
       </View>
 
@@ -232,7 +232,7 @@ export default function AddExpenseScreen() {
                   },
                 ]}
               >
-                {t === "income" ? "Cash Balance" : "Expense"}
+                {t === "income" ? "Cash Surplus" : "Expense"}
               </Text>
             </Pressable>
           ))}
@@ -555,7 +555,7 @@ export default function AddExpenseScreen() {
               },
             ]}
           >
-            {saving ? "Saving…" : entryType === "income" ? "Save Cash Balance" : "Save Expense"}
+            {saving ? "Saving…" : entryType === "income" ? "Save Cash Surplus" : "Save Expense"}
           </Text>
         </Pressable>
       </View>

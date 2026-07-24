@@ -100,8 +100,8 @@ export default function DashboardScreen() {
 
   const handleDeleteIncome = async (id: string, label: string) => {
     const ok = await confirmDestructive(
-      "Delete Cash Balance?",
-      `Remove ${label}?\n\nThis updates your Cash Balance. This cannot be undone.`,
+      "Delete Cash Surplus?",
+      `Remove ${label}?\n\nThis updates your Cash Surplus and Cash Balance. This cannot be undone.`,
       "Delete"
     );
     if (!ok) return;
@@ -214,13 +214,18 @@ export default function DashboardScreen() {
             <BudgetRing spent={spent} budget={budget} size={180} />
             <View style={styles.statsCol}>
               <StatPill
-                label="Cash Balance"
+                label="Cash Surplus"
                 value={formatINR(budget)}
                 color={colors.primary}
                 colors={colors}
               />
               <StatPill label="Spent" value={formatINR(spent)} color={colors.destructive} colors={colors} />
-              <StatPill label="Left" value={formatINR(Math.max(remaining, 0))} color={colors.accent} colors={colors} />
+              <StatPill
+                label="Cash Balance"
+                value={formatINR(Math.max(remaining, 0))}
+                color={colors.accent}
+                colors={colors}
+              />
             </View>
           </View>
         </View>
@@ -240,12 +245,11 @@ export default function DashboardScreen() {
             <Ionicons name="wallet-outline" size={22} color={colors.accent} />
             <View style={{ flex: 1, gap: 4 }}>
               <Text style={[styles.startTitle, { color: colors.foreground }]}>
-                Start with Cash Balance
+                Start with Cash Surplus
               </Text>
               <Text style={[styles.startBody, { color: colors.mutedForeground }]}>
                 When money comes in (e.g. ₹84,000 from boss), add it as Cash
-                Balance. That becomes your available pool. Then log expenses as
-                money goes out.
+                Surplus. Cash Balance = Cash Surplus − Spent.
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.accent} />
@@ -368,7 +372,7 @@ export default function DashboardScreen() {
         {monthIncomes.length > 0 && (
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
-              Cash Balance this month
+              Cash Surplus this month
             </Text>
             {monthIncomes.slice(0, 6).map((inc) => (
               <View
@@ -427,7 +431,7 @@ export default function DashboardScreen() {
                       },
                     ]}
                     accessibilityRole="button"
-                    accessibilityLabel="Delete Cash Balance"
+                    accessibilityLabel="Delete Cash Surplus"
                   >
                     <Ionicons
                       name="trash-outline"

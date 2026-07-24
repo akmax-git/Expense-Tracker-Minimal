@@ -60,19 +60,19 @@ export function BudgetRing({ spent, budget, size = 180 }: Props) {
         {budget <= 0 ? (
           <>
             <Text style={[styles.label, { color: colors.mutedForeground }]}>
-              Available
+              Cash Balance
             </Text>
             <Text style={[styles.amount, { color: colors.mutedForeground }]}>
               {formatINR(0)}
             </Text>
             <Text style={[styles.pct, { color: colors.mutedForeground }]}>
-            Add Cash Balance
+              Add Cash Surplus
             </Text>
           </>
         ) : (
           <>
             <Text style={[styles.label, { color: colors.mutedForeground }]}>
-              {isOver ? "Over budget" : "Remaining"}
+              {isOver ? "Over budget" : "Cash Balance"}
             </Text>
             <Text
               style={[

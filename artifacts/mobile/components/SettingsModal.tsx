@@ -204,20 +204,20 @@ export function SettingsModal({
     if (isManagerMode && !canEdit) {
       notify(
         "Read only",
-        "You cannot add Cash Balance on this account with your current access."
+        "You cannot add Cash Surplus on this account with your current access."
       );
       return;
     }
     const val = parseFloat(incomeAmount.replace(/,/g, ""));
     if (isNaN(val) || val <= 0) {
-      notify("Invalid amount", "Enter a valid Cash Balance amount.");
+      notify("Invalid amount", "Enter a valid Cash Surplus amount.");
       return;
     }
     setSavingIncome(true);
     try {
       await addIncome({
         amount: val,
-        source: incomeSource.trim() || "Cash Balance",
+        source: incomeSource.trim() || "Cash Surplus",
         note: incomeNote.trim(),
         date: dateToString(new Date()),
       });
@@ -226,9 +226,9 @@ export function SettingsModal({
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (err: any) {
       notify(
-        "Could not save Cash Balance",
+        "Could not save Cash Surplus",
         err?.message ??
-          "If this is the first time, run the cash balance SQL migration in Supabase."
+          "If this is the first time, run the cash surplus SQL migration in Supabase."
       );
     } finally {
       setSavingIncome(false);
@@ -237,8 +237,8 @@ export function SettingsModal({
 
   const handleDeleteIncome = async (id: string, label: string) => {
     const ok = await confirmDestructive(
-      "Remove Cash Balance?",
-      `Remove ${label}? This updates the month's Cash Balance.`
+      "Remove Cash Surplus?",
+      `Remove ${label}? This updates Cash Surplus and Cash Balance.`
     );
     if (!ok) return;
     try {
@@ -416,7 +416,7 @@ export function SettingsModal({
           </View>
 
           {/* Cash balance ledger — this IS the monthly available pool */}
-          <SectionHeader title="CASH BALANCE" colors={colors} />
+          <SectionHeader title="CASH SURPLUS" colors={colors} />
           <View
             style={[
               styles.budgetCard,
@@ -424,9 +424,8 @@ export function SettingsModal({
             ]}
           >
             <Text style={[styles.budgetLabel, { color: colors.mutedForeground }]}>
-              Money in is your cash balance. Log every transfer (e.g. from boss).
-              When more money arrives, add another entry — available balance
-              updates automatically.
+              Money in is Cash Surplus. Log every transfer (e.g. from boss).
+              Cash Balance = Cash Surplus − Spent, and updates automatically.
             </Text>
             <View
               style={[
@@ -435,7 +434,7 @@ export function SettingsModal({
               ]}
             >
               <Text style={[styles.incomeTotalLabel, { color: colors.mutedForeground }]}>
-                This month Cash Balance
+                This month Cash Surplus
               </Text>
               <Text style={[styles.incomeTotalValue, { color: colors.accent }]}>
                 {formatINR(incomeTotal)}
@@ -507,7 +506,7 @@ export function SettingsModal({
                     <ActivityIndicator color={colors.accentForeground} />
                   ) : (
                     <Text style={[styles.saveBtnText, { color: colors.accentForeground }]}>
-                      Add Cash Balance
+                      Add Cash Surplus
                     </Text>
                   )}
                 </Pressable>
@@ -517,7 +516,7 @@ export function SettingsModal({
             <View style={{ marginTop: 12, gap: 8 }}>
               {monthIncomes.length === 0 ? (
                 <Text style={[styles.budgetLocked, { color: colors.mutedForeground }]}>
-                  No Cash Balance recorded yet for this month.
+                  No Cash Surplus recorded yet for this month.
                 </Text>
               ) : (
                 monthIncomes.map((inc) => (
