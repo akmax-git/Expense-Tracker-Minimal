@@ -200,7 +200,7 @@ export function ExpenseProvider({
               id: r.id,
               amount: Number(r.amount),
               note: r.note ?? "",
-              source: r.source ?? "Income",
+              source: r.source ?? "Cash Balance",
               date: r.date,
               createdAt: r.created_at,
             }))
@@ -328,7 +328,7 @@ export function ExpenseProvider({
               id: r.id,
               amount: Number(r.amount),
               note: r.note ?? "",
-              source: r.source ?? "Income",
+              source: r.source ?? "Cash Balance",
               date: r.date,
               createdAt: r.created_at,
             };

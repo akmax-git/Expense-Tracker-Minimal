@@ -100,8 +100,8 @@ export default function DashboardScreen() {
 
   const handleDeleteIncome = async (id: string, label: string) => {
     const ok = await confirmDestructive(
-      "Delete income?",
-      `Remove ${label}?\n\nThis updates your available budget. This cannot be undone.`,
+      "Delete Cash Balance?",
+      `Remove ${label}?\n\nThis updates your Cash Balance. This cannot be undone.`,
       "Delete"
     );
     if (!ok) return;
@@ -214,7 +214,7 @@ export default function DashboardScreen() {
             <BudgetRing spent={spent} budget={budget} size={180} />
             <View style={styles.statsCol}>
               <StatPill
-                label="Income"
+                label="Cash Balance"
                 value={formatINR(budget)}
                 color={colors.primary}
                 colors={colors}
@@ -240,11 +240,12 @@ export default function DashboardScreen() {
             <Ionicons name="wallet-outline" size={22} color={colors.accent} />
             <View style={{ flex: 1, gap: 4 }}>
               <Text style={[styles.startTitle, { color: colors.foreground }]}>
-                Start with income
+                Start with Cash Balance
               </Text>
               <Text style={[styles.startBody, { color: colors.mutedForeground }]}>
-                When money comes in (e.g. ₹84,000 from boss), add it as Income.
-                That becomes your budget. Then log expenses as money goes out.
+                When money comes in (e.g. ₹84,000 from boss), add it as Cash
+                Balance. That becomes your available pool. Then log expenses as
+                money goes out.
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.accent} />
@@ -367,7 +368,7 @@ export default function DashboardScreen() {
         {monthIncomes.length > 0 && (
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
-              Income this month
+              Cash Balance this month
             </Text>
             {monthIncomes.slice(0, 6).map((inc) => (
               <View
@@ -426,7 +427,7 @@ export default function DashboardScreen() {
                       },
                     ]}
                     accessibilityRole="button"
-                    accessibilityLabel="Delete income"
+                    accessibilityLabel="Delete Cash Balance"
                   >
                     <Ionicons
                       name="trash-outline"
@@ -503,10 +504,10 @@ const statStyles = StyleSheet.create({
     gap: 1,
   },
   label: {
-    fontSize: 10,
+    fontSize: 9,
     fontFamily: "Inter_500Medium",
     textTransform: "uppercase",
-    letterSpacing: 0.4,
+    letterSpacing: 0.3,
   },
   value: {
     fontSize: 14,

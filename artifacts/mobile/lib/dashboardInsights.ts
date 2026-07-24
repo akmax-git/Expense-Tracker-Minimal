@@ -203,10 +203,10 @@ export function statusHeadline(
 
   if (pace.budget <= 0) {
     return {
-      title: "No income yet",
+      title: "No Cash Balance",
       message: isManagerMode
-        ? "Add income when money is received to start tracking spend against it."
-        : "Add income first (boss transfer, salary, etc.). Your budget is the sum of income records.",
+        ? "Add Cash Balance when money is received to start tracking spend against it."
+        : "Add Cash Balance first (boss transfer, salary, etc.). Your available pool is the sum of those entries.",
     };
   }
 

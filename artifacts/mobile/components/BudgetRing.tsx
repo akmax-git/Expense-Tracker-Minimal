@@ -66,7 +66,7 @@ export function BudgetRing({ spent, budget, size = 180 }: Props) {
               {formatINR(0)}
             </Text>
             <Text style={[styles.pct, { color: colors.mutedForeground }]}>
-              Add income to start
+            Add Cash Balance
             </Text>
           </>
         ) : (
