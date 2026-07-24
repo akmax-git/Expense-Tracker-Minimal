@@ -57,20 +57,36 @@ export function BudgetRing({ spent, budget, size = 180 }: Props) {
         />
       </Svg>
       <View style={styles.center}>
-        <Text style={[styles.label, { color: colors.mutedForeground }]}>
-          {isOver ? "Over budget" : "Remaining"}
-        </Text>
-        <Text
-          style={[
-            styles.amount,
-            { color: isOver ? colors.destructive : colors.foreground },
-          ]}
-        >
-          {formatINR(Math.abs(remaining))}
-        </Text>
-        <Text style={[styles.pct, { color: colors.mutedForeground }]}>
-          {(percentage * 100).toFixed(0)}% used
-        </Text>
+        {budget <= 0 ? (
+          <>
+            <Text style={[styles.label, { color: colors.mutedForeground }]}>
+              Available
+            </Text>
+            <Text style={[styles.amount, { color: colors.mutedForeground }]}>
+              {formatINR(0)}
+            </Text>
+            <Text style={[styles.pct, { color: colors.mutedForeground }]}>
+              Add income to start
+            </Text>
+          </>
+        ) : (
+          <>
+            <Text style={[styles.label, { color: colors.mutedForeground }]}>
+              {isOver ? "Over budget" : "Remaining"}
+            </Text>
+            <Text
+              style={[
+                styles.amount,
+                { color: isOver ? colors.destructive : colors.foreground },
+              ]}
+            >
+              {formatINR(Math.abs(remaining))}
+            </Text>
+            <Text style={[styles.pct, { color: colors.mutedForeground }]}>
+              {(percentage * 100).toFixed(0)}% used
+            </Text>
+          </>
+        )}
       </View>
     </View>
   );

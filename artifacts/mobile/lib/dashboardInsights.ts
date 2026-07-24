@@ -203,10 +203,10 @@ export function statusHeadline(
 
   if (pace.budget <= 0) {
     return {
-      title: "No budget set",
+      title: "No income yet",
       message: isManagerMode
-        ? "Set a monthly budget to track pace and projections."
-        : "Set a monthly budget in settings to track your pace.",
+        ? "Add income when money is received to start tracking spend against it."
+        : "Add income first (boss transfer, salary, etc.). Your budget is the sum of income records.",
     };
   }
 

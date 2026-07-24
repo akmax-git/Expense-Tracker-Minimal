@@ -24,6 +24,15 @@ export interface MonthBudget {
   amount: number;
 }
 
+export interface Income {
+  id: string;
+  amount: number;
+  note: string;
+  source: string;
+  date: string;
+  createdAt: string;
+}
+
 export interface QuickTemplate {
   id: string;
   label: string;
@@ -68,6 +77,7 @@ export function isDefaultCategory(name: string): boolean {
 
 interface ExpenseContextValue {
   expenses: Expense[];
+  incomes: Income[];
   budgets: MonthBudget[];
   quickTemplates: QuickTemplate[];
   customCategories: CategoryInfo[];
@@ -76,8 +86,15 @@ interface ExpenseContextValue {
   syncError: string | null;
   addExpense: (expense: Omit<Expense, "id" | "createdAt">) => Promise<void>;
   deleteExpense: (id: string) => Promise<void>;
+  addIncome: (income: Omit<Income, "id" | "createdAt">) => Promise<void>;
+  deleteIncome: (id: string) => Promise<void>;
   setMonthBudget: (month: string, amount: number) => Promise<void>;
+  /** Effective budget = sum of income entries for the month (no manual target). */
   getMonthBudget: (month: string) => number;
+  getMonthIncomeTotal: (month: string) => number;
+  getMonthIncomes: (month: string) => Income[];
+  /** True when at least one income entry exists for the month. */
+  isIncomeDrivenBudget: (month: string) => boolean;
   getMonthExpenses: (month: string) => Expense[];
   getDayExpenses: (date: string) => Expense[];
   addQuickTemplate: (template: Omit<QuickTemplate, "id">) => Promise<void>;
@@ -102,6 +119,7 @@ export function ExpenseProvider({
 }) {
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [incomes, setIncomes] = useState<Income[]>([]);
   const [budgets, setBudgets] = useState<MonthBudget[]>([]);
   const [quickTemplates, setQuickTemplates] = useState<QuickTemplate[]>(
     DEFAULT_QUICK_TEMPLATES
@@ -148,9 +166,42 @@ export function ExpenseProvider({
         setBudgets(
           (budData ?? []).map((r: any) => ({
             month: r.month,
-            amount: r.amount,
+            amount: Number(r.amount),
           }))
         );
+
+        const { data: incData, error: incError } = await supabase
+          .from("incomes")
+          .select("*")
+          .eq("user_id", userId)
+          .order("date", { ascending: false })
+          .order("created_at", { ascending: false });
+
+        // Table may not exist until migration is run — don't block the app
+        if (incError) {
+          const msg = String(incError.message ?? "").toLowerCase();
+          const missingTable =
+            msg.includes("does not exist") ||
+            msg.includes("could not find the table") ||
+            msg.includes("schema cache") ||
+            incError.code === "42P01" ||
+            incError.code === "PGRST205";
+          if (!missingTable) {
+            setSyncError(incError.message);
+          }
+          setIncomes([]);
+        } else {
+          setIncomes(
+            (incData ?? []).map((r: any) => ({
+              id: r.id,
+              amount: Number(r.amount),
+              note: r.note ?? "",
+              source: r.source ?? "Income",
+              date: r.date,
+              createdAt: r.created_at,
+            }))
+          );
+        }
       } catch (err: any) {
         setSyncError(err?.message ?? "Failed to load data");
       } finally {
@@ -236,8 +287,38 @@ export function ExpenseProvider({
             const r = payload.new as any;
             setBudgets((prev) => [
               ...prev.filter((b) => b.month !== r.month),
-              { month: r.month, amount: r.amount },
+              { month: r.month, amount: Number(r.amount) },
             ]);
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "incomes",
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          if (payload.eventType === "INSERT") {
+            const r = payload.new as any;
+            const row: Income = {
+              id: r.id,
+              amount: Number(r.amount),
+              note: r.note ?? "",
+              source: r.source ?? "Income",
+              date: r.date,
+              createdAt: r.created_at,
+            };
+            setIncomes((prev) => {
+              if (prev.find((i) => i.id === row.id)) return prev;
+              return [row, ...prev];
+            });
+          } else if (payload.eventType === "DELETE") {
+            setIncomes((prev) =>
+              prev.filter((i) => i.id !== (payload.old as any).id)
+            );
           }
         }
       )
@@ -311,10 +392,74 @@ export function ExpenseProvider({
     [userId]
   );
 
-  // ─── Budgets ──────────────────────────────────────────────────────────────
+  // ─── Budgets & Income ─────────────────────────────────────────────────────
+
+  const getMonthIncomes = useCallback(
+    (month: string) => incomes.filter((i) => i.date.startsWith(month)),
+    [incomes]
+  );
+
+  const getMonthIncomeTotal = useCallback(
+    (month: string) =>
+      getMonthIncomes(month).reduce((s, i) => s + i.amount, 0),
+    [getMonthIncomes]
+  );
+
+  const isIncomeDrivenBudget = useCallback(
+    (month: string) => getMonthIncomes(month).length > 0,
+    [getMonthIncomes]
+  );
+
+  const addIncome = useCallback(
+    async (income: Omit<Income, "id" | "createdAt">) => {
+      const id = generateId();
+      const createdAt = new Date().toISOString();
+      const newIncome: Income = { ...income, id, createdAt };
+
+      setIncomes((prev) => [newIncome, ...prev]);
+
+      const { error } = await supabase.from("incomes").insert({
+        id,
+        user_id: userId,
+        amount: income.amount,
+        note: income.note,
+        source: income.source,
+        date: income.date,
+        created_at: createdAt,
+      });
+
+      if (error) {
+        setIncomes((prev) => prev.filter((i) => i.id !== id));
+        setSyncError(error.message);
+        throw new Error(error.message);
+      }
+    },
+    [userId]
+  );
+
+  const deleteIncome = useCallback(
+    async (id: string) => {
+      const previous = incomes;
+      setIncomes((prev) => prev.filter((i) => i.id !== id));
+
+      const { error } = await supabase
+        .from("incomes")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", userId);
+
+      if (error) {
+        setIncomes(previous);
+        setSyncError(error.message);
+        throw new Error(error.message);
+      }
+    },
+    [userId, incomes]
+  );
 
   const setMonthBudget = useCallback(
     async (month: string, amount: number) => {
+      const previous = budgets;
       setBudgets((prev) => [
         ...prev.filter((b) => b.month !== month),
         { month, amount },
@@ -322,16 +467,23 @@ export function ExpenseProvider({
 
       const { error } = await supabase
         .from("budgets")
-        .upsert({ user_id: userId, month, amount }, { onConflict: "user_id,month" });
+        .upsert(
+          { user_id: userId, month, amount },
+          { onConflict: "user_id,month" }
+        );
 
-      if (error) setSyncError(error.message);
+      if (error) {
+        setBudgets(previous);
+        setSyncError(error.message);
+        throw new Error(error.message);
+      }
     },
-    [userId]
+    [userId, budgets]
   );
 
   const getMonthBudget = useCallback(
-    (month: string) => budgets.find((b) => b.month === month)?.amount ?? 30000,
-    [budgets]
+    (month: string) => getMonthIncomeTotal(month),
+    [getMonthIncomeTotal]
   );
 
   const getMonthExpenses = useCallback(
@@ -443,6 +595,7 @@ export function ExpenseProvider({
     <ExpenseContext.Provider
       value={{
         expenses,
+        incomes,
         budgets,
         quickTemplates,
         customCategories,
@@ -451,8 +604,13 @@ export function ExpenseProvider({
         syncError,
         addExpense,
         deleteExpense,
+        addIncome,
+        deleteIncome,
         setMonthBudget,
         getMonthBudget,
+        getMonthIncomeTotal,
+        getMonthIncomes,
+        isIncomeDrivenBudget,
         getMonthExpenses,
         getDayExpenses,
         addQuickTemplate,

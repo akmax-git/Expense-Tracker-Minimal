@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { router } from "expo-router";
-import React, { useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -20,6 +20,7 @@ import { CategoryGrid } from "@/components/CategoryGrid";
 import { DatePickerModal } from "@/components/DatePickerModal";
 import { useAuth } from "@/context/AuthContext";
 import {
+  currentMonth,
   dateToString,
   formatINR,
   useExpenses,
@@ -43,10 +44,13 @@ export default function AddExpenseScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { viewingAs, canEdit, isManagerMode } = useManager();
-  const { allCategories, addExpense } = useExpenses();
+  const { allCategories, addExpense, addIncome, getMonthIncomeTotal } =
+    useExpenses();
 
+  const [entryType, setEntryType] = useState<"expense" | "income">("income");
   const [amountRaw, setAmountRaw] = useState("");
   const [category, setCategory] = useState(allCategories[0]?.name ?? "Food");
+  const [incomeSource, setIncomeSource] = useState("Boss / Transfer");
   const [note, setNote] = useState("");
   const [date, setDate] = useState(todayStr());
   const [saving, setSaving] = useState(false);
@@ -55,8 +59,20 @@ export default function AddExpenseScreen() {
   const [billMime, setBillMime] = useState<string | null>(null);
   const [billName, setBillName] = useState<string | null>(null);
 
+  // Fresh month with no income → land on Income tab
+  useFocusEffect(
+    useCallback(() => {
+      if (getMonthIncomeTotal(currentMonth()) <= 0) {
+        setEntryType("income");
+      }
+    }, [getMonthIncomeTotal])
+  );
+
   const amount = parseFloat(amountRaw) || 0;
-  const canSave = amount > 0 && category && canEdit;
+  const canSave =
+    amount > 0 &&
+    canEdit &&
+    (entryType === "income" || !!category);
 
   // Tab bar overlays content (absolute). Keep Save button above it.
   const tabBarHeight = Platform.OS === "web" ? 84 : 56 + insets.bottom;
@@ -94,6 +110,21 @@ export default function AddExpenseScreen() {
     }
     setSaving(true);
     try {
+      if (entryType === "income") {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        await addIncome({
+          amount,
+          source: incomeSource.trim() || "Income",
+          note,
+          date,
+        });
+        setAmountRaw("");
+        setNote("");
+        setDate(todayStr());
+        router.push("/(tabs)/");
+        return;
+      }
+
       let billUrl: string | null = null;
       if (billUri) {
         billUrl = await uploadBill(billOwnerId, billUri, billMime);
@@ -136,7 +167,9 @@ export default function AddExpenseScreen() {
           },
         ]}
       >
-        <Text style={[styles.title, { color: colors.foreground }]}>Add Expense</Text>
+        <Text style={[styles.title, { color: colors.foreground }]}>
+          {entryType === "income" ? "Add Income" : "Add Expense"}
+        </Text>
       </View>
 
       {isManagerMode && !canEdit ? (
@@ -148,7 +181,7 @@ export default function AddExpenseScreen() {
         >
           <Ionicons name="lock-closed-outline" size={16} color={colors.destructive} />
           <Text style={[styles.readOnlyBannerText, { color: colors.destructive }]}>
-            Read only — you cannot add expenses for this account
+            Read only — you cannot add entries for this account
           </Text>
         </View>
       ) : null}
@@ -161,6 +194,50 @@ export default function AddExpenseScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
+        {/* Expense / Income toggle */}
+        <View
+          style={[
+            styles.typeToggle,
+            { backgroundColor: colors.muted, borderColor: colors.border },
+          ]}
+        >
+          {(["expense", "income"] as const).map((t) => (
+            <Pressable
+              key={t}
+              onPress={() => setEntryType(t)}
+              style={[
+                styles.typeBtn,
+                entryType === t && { backgroundColor: colors.card },
+              ]}
+            >
+              <Ionicons
+                name={t === "income" ? "arrow-down-circle-outline" : "arrow-up-circle-outline"}
+                size={16}
+                color={
+                  entryType === t
+                    ? t === "income"
+                      ? colors.accent
+                      : colors.destructive
+                    : colors.mutedForeground
+                }
+              />
+              <Text
+                style={[
+                  styles.typeBtnText,
+                  {
+                    color:
+                      entryType === t ? colors.foreground : colors.mutedForeground,
+                    fontFamily:
+                      entryType === t ? "Inter_600SemiBold" : "Inter_400Regular",
+                  },
+                ]}
+              >
+                {t === "income" ? "Income" : "Expense"}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
         {/* Amount display */}
         <View
           style={[
@@ -273,17 +350,39 @@ export default function AddExpenseScreen() {
           </View>
         </View>
 
-        {/* Category */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
-            Category
-          </Text>
-          <CategoryGrid
-            categories={allCategories}
-            selected={category}
-            onSelect={setCategory}
-          />
-        </View>
+        {/* Category or Income source */}
+        {entryType === "income" ? (
+          <View style={styles.section}>
+            <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
+              Source
+            </Text>
+            <TextInput
+              value={incomeSource}
+              onChangeText={setIncomeSource}
+              placeholder="Boss, Salary, Transfer…"
+              placeholderTextColor={colors.mutedForeground}
+              style={[
+                styles.noteInput,
+                {
+                  color: colors.foreground,
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                },
+              ]}
+            />
+          </View>
+        ) : (
+          <View style={styles.section}>
+            <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
+              Category
+            </Text>
+            <CategoryGrid
+              categories={allCategories}
+              selected={category}
+              onSelect={setCategory}
+            />
+          </View>
+        )}
 
         {/* Note */}
         <View style={styles.section}>
@@ -293,7 +392,11 @@ export default function AddExpenseScreen() {
           <TextInput
             value={note}
             onChangeText={setNote}
-            placeholder="What was this for?"
+            placeholder={
+              entryType === "income"
+                ? "e.g. July top-up from boss"
+                : "What was this for?"
+            }
             placeholderTextColor={colors.mutedForeground}
             style={[
               styles.noteInput,
@@ -308,7 +411,8 @@ export default function AddExpenseScreen() {
           />
         </View>
 
-        {/* Bill upload */}
+        {/* Bill upload — expenses only */}
+        {entryType === "expense" && (
         <View style={styles.section}>
           <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
             Bill / Receipt (optional)
@@ -405,6 +509,7 @@ export default function AddExpenseScreen() {
             </Pressable>
           )}
         </View>
+        )}
       </ScrollView>
 
       {/* Save button — sits above the tab bar */}
@@ -450,7 +555,7 @@ export default function AddExpenseScreen() {
               },
             ]}
           >
-            {saving ? "Saving…" : "Save Expense"}
+            {saving ? "Saving…" : entryType === "income" ? "Save Income" : "Save Expense"}
           </Text>
         </Pressable>
       </View>
@@ -496,6 +601,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 20,
     gap: 20,
+  },
+  typeToggle: {
+    flexDirection: "row",
+    borderRadius: 12,
+    padding: 4,
+    borderWidth: 1,
+    gap: 4,
+  },
+  typeBtn: {
+    flex: 1,
+    height: 40,
+    borderRadius: 9,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  typeBtnText: {
+    fontSize: 14,
   },
   amountCard: {
     borderRadius: 20,

@@ -18,6 +18,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import {
   CategoryInfo,
+  currentMonth,
+  dateToString,
+  formatINR,
   isDefaultCategory,
   useExpenses,
 } from "@/context/ExpenseContext";
@@ -72,9 +75,8 @@ const CATEGORY_COLORS = [
 interface Props {
   visible: boolean;
   onClose: () => void;
-  // Budget section props
-  currentBudget: number;
-  onSaveBudget: (val: number) => void;
+  /** YYYY-MM for the month whose income is being edited */
+  budgetMonth?: string;
 }
 
 function SectionHeader({ title, colors }: { title: string; colors: ReturnType<typeof useColors> }) {
@@ -162,11 +164,23 @@ function Row({ label, value, icon, onPress, destructive, colors }: {
   );
 }
 
-export function SettingsModal({ visible, onClose, currentBudget, onSaveBudget }: Props) {
+export function SettingsModal({
+  visible,
+  onClose,
+  budgetMonth,
+}: Props) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user, signOut } = useAuth();
-  const { allCategories, addCustomCategory, removeCustomCategory } = useExpenses();
+  const {
+    allCategories,
+    addCustomCategory,
+    removeCustomCategory,
+    getMonthIncomes,
+    getMonthIncomeTotal,
+    addIncome,
+    deleteIncome,
+  } = useExpenses();
   const {
     myGrants,
     managerOf,
@@ -177,10 +191,17 @@ export function SettingsModal({ visible, onClose, currentBudget, onSaveBudget }:
     viewingAs,
     setViewingAs,
     isManagerMode,
-    canManageBudget,
+    canEdit,
   } = useManager();
 
-  const [budgetInput, setBudgetInput] = useState(String(currentBudget || ""));
+  const monthKey = budgetMonth ?? currentMonth();
+  const monthIncomes = getMonthIncomes(monthKey);
+  const incomeTotal = getMonthIncomeTotal(monthKey);
+
+  const [incomeAmount, setIncomeAmount] = useState("");
+  const [incomeSource, setIncomeSource] = useState("Boss / Transfer");
+  const [incomeNote, setIncomeNote] = useState("");
+  const [savingIncome, setSavingIncome] = useState(false);
   const [grantEmailInput, setGrantEmailInput] = useState("");
   const [grantPermission, setGrantPermission] =
     useState<ManagerPermission>("read");
@@ -199,20 +220,52 @@ export function SettingsModal({ visible, onClose, currentBudget, onSaveBudget }:
 
   const topPadding = Platform.OS === "web" ? 24 : insets.top;
 
-  const saveBudget = () => {
-    if (isManagerMode && !canManageBudget) {
+  const saveIncome = async () => {
+    if (isManagerMode && !canEdit) {
       notify(
-        "No budget access",
-        "Your manager access is view/edit only. Ask the owner for Full access to change budget."
+        "Read only",
+        "You cannot add income on this account with your current access."
       );
       return;
     }
-    const val = parseFloat(budgetInput.replace(/,/g, ""));
-    if (!isNaN(val) && val > 0) {
-      onSaveBudget(val);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } else {
-      notify("Invalid amount", "Please enter a valid budget amount.");
+    const val = parseFloat(incomeAmount.replace(/,/g, ""));
+    if (isNaN(val) || val <= 0) {
+      notify("Invalid amount", "Enter a valid income amount.");
+      return;
+    }
+    setSavingIncome(true);
+    try {
+      await addIncome({
+        amount: val,
+        source: incomeSource.trim() || "Income",
+        note: incomeNote.trim(),
+        date: dateToString(new Date()),
+      });
+      setIncomeAmount("");
+      setIncomeNote("");
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (err: any) {
+      notify(
+        "Could not save income",
+        err?.message ??
+          "If this is the first time, run the incomes SQL migration in Supabase."
+      );
+    } finally {
+      setSavingIncome(false);
+    }
+  };
+
+  const handleDeleteIncome = async (id: string, label: string) => {
+    const ok = await confirmDestructive(
+      "Remove income?",
+      `Remove ${label}? This updates the month's available budget.`
+    );
+    if (!ok) return;
+    try {
+      await deleteIncome(id);
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (err: any) {
+      notify("Could not remove", err?.message ?? "Please try again.");
     }
   };
 
@@ -382,8 +435,8 @@ export function SettingsModal({ visible, onClose, currentBudget, onSaveBudget }:
             </View>
           </View>
 
-          {/* Monthly Budget */}
-          <SectionHeader title="MONTHLY BUDGET" colors={colors} />
+          {/* Income ledger — this IS the monthly budget */}
+          <SectionHeader title="INCOME = BUDGET" colors={colors} />
           <View
             style={[
               styles.budgetCard,
@@ -391,14 +444,26 @@ export function SettingsModal({ visible, onClose, currentBudget, onSaveBudget }:
             ]}
           >
             <Text style={[styles.budgetLabel, { color: colors.mutedForeground }]}>
-              Budget (₹)
+              Money in is your budget. Log every transfer (e.g. from boss). When
+              more money arrives, add another income entry — available balance
+              updates automatically.
             </Text>
-            {isManagerMode && !canManageBudget ? (
-              <Text style={[styles.budgetLocked, { color: colors.mutedForeground }]}>
-                ₹{currentBudget || 0} — Full access required to change
+            <View
+              style={[
+                styles.incomeTotalRow,
+                { backgroundColor: colors.accent + "12", borderColor: colors.accent + "30" },
+              ]}
+            >
+              <Text style={[styles.incomeTotalLabel, { color: colors.mutedForeground }]}>
+                This month income
               </Text>
-            ) : (
-              <View style={styles.budgetRow}>
+              <Text style={[styles.incomeTotalValue, { color: colors.accent }]}>
+                {formatINR(incomeTotal)}
+              </Text>
+            </View>
+
+            {(!isManagerMode || canEdit) && (
+              <View style={{ gap: 8, marginTop: 10 }}>
                 <TextInput
                   style={[
                     styles.budgetInput,
@@ -406,26 +471,126 @@ export function SettingsModal({ visible, onClose, currentBudget, onSaveBudget }:
                       color: colors.foreground,
                       borderColor: colors.border,
                       backgroundColor: colors.background,
+                      width: "100%",
                     },
                   ]}
-                  value={budgetInput}
-                  onChangeText={setBudgetInput}
+                  value={incomeAmount}
+                  onChangeText={setIncomeAmount}
                   keyboardType="numeric"
-                  placeholder="Enter amount"
+                  placeholder="Amount (₹)"
                   placeholderTextColor={colors.mutedForeground}
-                  returnKeyType="done"
-                  onSubmitEditing={saveBudget}
+                />
+                <TextInput
+                  style={[
+                    styles.budgetInput,
+                    {
+                      color: colors.foreground,
+                      borderColor: colors.border,
+                      backgroundColor: colors.background,
+                      width: "100%",
+                    },
+                  ]}
+                  value={incomeSource}
+                  onChangeText={setIncomeSource}
+                  placeholder="Source (e.g. Boss, Salary)"
+                  placeholderTextColor={colors.mutedForeground}
+                />
+                <TextInput
+                  style={[
+                    styles.budgetInput,
+                    {
+                      color: colors.foreground,
+                      borderColor: colors.border,
+                      backgroundColor: colors.background,
+                      width: "100%",
+                    },
+                  ]}
+                  value={incomeNote}
+                  onChangeText={setIncomeNote}
+                  placeholder="Note (optional)"
+                  placeholderTextColor={colors.mutedForeground}
                 />
                 <Pressable
-                  onPress={saveBudget}
-                  style={[styles.saveBtn, { backgroundColor: colors.primary }]}
+                  onPress={saveIncome}
+                  disabled={savingIncome}
+                  style={[
+                    styles.saveBtn,
+                    {
+                      backgroundColor: colors.accent,
+                      opacity: savingIncome ? 0.7 : 1,
+                      alignSelf: "stretch",
+                      alignItems: "center",
+                    },
+                  ]}
                 >
-                  <Text style={[styles.saveBtnText, { color: colors.primaryForeground }]}>
-                    Save
-                  </Text>
+                  {savingIncome ? (
+                    <ActivityIndicator color={colors.accentForeground} />
+                  ) : (
+                    <Text style={[styles.saveBtnText, { color: colors.accentForeground }]}>
+                      Add income
+                    </Text>
+                  )}
                 </Pressable>
               </View>
             )}
+
+            <View style={{ marginTop: 12, gap: 8 }}>
+              {monthIncomes.length === 0 ? (
+                <Text style={[styles.budgetLocked, { color: colors.mutedForeground }]}>
+                  No income recorded yet for this month.
+                </Text>
+              ) : (
+                monthIncomes.map((inc) => (
+                  <View
+                    key={inc.id}
+                    style={[
+                      styles.incomeRow,
+                      {
+                        borderColor: colors.border,
+                        backgroundColor: colors.background,
+                      },
+                    ]}
+                  >
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Text
+                        style={[styles.grantEmail, { color: colors.foreground }]}
+                        numberOfLines={1}
+                      >
+                        {inc.source}
+                      </Text>
+                      <Text
+                        style={[styles.managerCardSub, { color: colors.mutedForeground }]}
+                        numberOfLines={1}
+                      >
+                        {inc.date}
+                        {inc.note ? ` · ${inc.note}` : ""}
+                      </Text>
+                    </View>
+                    <Text style={[styles.incomeRowAmount, { color: colors.accent }]}>
+                      {formatINR(inc.amount)}
+                    </Text>
+                    {(!isManagerMode || canEdit) && (
+                      <Pressable
+                        onPress={() =>
+                          handleDeleteIncome(
+                            inc.id,
+                            `${formatINR(inc.amount)} (${inc.source})`
+                          )
+                        }
+                        hitSlop={8}
+                        style={{ padding: 4 }}
+                      >
+                        <Ionicons
+                          name="trash-outline"
+                          size={18}
+                          color={colors.destructive}
+                        />
+                      </Pressable>
+                    )}
+                  </View>
+                ))
+              )}
+            </View>
           </View>
 
           {/* Categories */}
@@ -1212,6 +1377,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     fontSize: 16,
     fontFamily: "Inter_400Regular",
+  },
+  incomeTotalRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginTop: 10,
+  },
+  incomeTotalLabel: {
+    fontSize: 12,
+    fontFamily: "Inter_500Medium",
+  },
+  incomeTotalValue: {
+    fontSize: 16,
+    fontFamily: "Inter_700Bold",
+  },
+  incomeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  incomeRowAmount: {
+    fontSize: 14,
+    fontFamily: "Inter_700Bold",
   },
   saveBtn: {
     height: 44,

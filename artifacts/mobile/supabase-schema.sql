@@ -5,6 +5,7 @@
 -- ============================================================
 
 -- Drop existing tables (reverse dependency order)
+drop table if exists public.incomes;
 drop table if exists public.expenses;
 drop table if exists public.budgets;
 drop table if exists public.manager_access;
@@ -161,6 +162,57 @@ create policy "managers write budgets" on public.budgets for all
 -- ─── Realtime ─────────────────────────────────────────────────
 alter publication supabase_realtime add table public.expenses;
 alter publication supabase_realtime add table public.budgets;
+
+-- ─── Incomes (money received) ────────────────────────────────
+create table public.incomes (
+  id          text primary key,
+  user_id     uuid not null references auth.users(id) on delete cascade,
+  amount      numeric(12, 2) not null check (amount > 0),
+  note        text not null default '',
+  source      text not null default 'Income',
+  date        text not null,
+  created_at  timestamptz not null default now()
+);
+
+create index incomes_user_date_idx on public.incomes (user_id, date desc);
+
+alter table public.incomes enable row level security;
+
+create policy "users own incomes" on public.incomes for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create policy "managers read incomes" on public.incomes for select
+  using (
+    exists (
+      select 1 from public.manager_access ma
+      where ma.manager_user_id = auth.uid()
+        and ma.owner_user_id = incomes.user_id
+        and ma.status = 'active'
+    )
+  );
+
+create policy "managers write incomes" on public.incomes for all
+  using (
+    exists (
+      select 1 from public.manager_access ma
+      where ma.manager_user_id = auth.uid()
+        and ma.owner_user_id = incomes.user_id
+        and ma.status = 'active'
+        and ma.permission in ('edit', 'full')
+    )
+  )
+  with check (
+    exists (
+      select 1 from public.manager_access ma
+      where ma.manager_user_id = auth.uid()
+        and ma.owner_user_id = incomes.user_id
+        and ma.status = 'active'
+        and ma.permission in ('edit', 'full')
+    )
+  );
+
+alter publication supabase_realtime add table public.incomes;
 
 -- ─── Bill / Receipt Storage ───────────────────────────────────
 insert into storage.buckets (id, name, public)

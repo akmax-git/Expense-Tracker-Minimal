@@ -47,11 +47,12 @@ export default function DashboardScreen() {
   const {
     getMonthExpenses,
     getMonthBudget,
-    setMonthBudget,
+    getMonthIncomes,
     quickTemplates,
     getCategoryInfo,
     addExpense,
     deleteExpense,
+    deleteIncome,
   } = useExpenses();
 
   const [month, setMonth] = useState(currentMonth);
@@ -59,6 +60,7 @@ export default function DashboardScreen() {
 
   const isCurrentMonth = month === currentMonth();
   const budget = getMonthBudget(month);
+  const monthIncomes = getMonthIncomes(month);
   const monthExpenses = getMonthExpenses(month);
   const prevMonthExpenses = getMonthExpenses(monthOffset(month, -1));
   const spent = sumExpenses(monthExpenses);
@@ -199,12 +201,43 @@ export default function DashboardScreen() {
           <View style={styles.ringRow}>
             <BudgetRing spent={spent} budget={budget} size={180} />
             <View style={styles.statsCol}>
-              <StatPill label="Budget" value={formatINR(budget)} color={colors.primary} colors={colors} />
+              <StatPill
+                label="Income"
+                value={formatINR(budget)}
+                color={colors.primary}
+                colors={colors}
+              />
               <StatPill label="Spent" value={formatINR(spent)} color={colors.destructive} colors={colors} />
               <StatPill label="Left" value={formatINR(Math.max(remaining, 0))} color={colors.accent} colors={colors} />
             </View>
           </View>
         </View>
+
+        {/* Fresh start: no income yet */}
+        {budget <= 0 && canEdit && (
+          <Pressable
+            onPress={() => router.push("/(tabs)/add")}
+            style={[
+              styles.startCard,
+              {
+                backgroundColor: colors.accent + "12",
+                borderColor: colors.accent + "35",
+              },
+            ]}
+          >
+            <Ionicons name="wallet-outline" size={22} color={colors.accent} />
+            <View style={{ flex: 1, gap: 4 }}>
+              <Text style={[styles.startTitle, { color: colors.foreground }]}>
+                Start with income
+              </Text>
+              <Text style={[styles.startBody, { color: colors.mutedForeground }]}>
+                When money comes in (e.g. ₹84,000 from boss), add it as Income.
+                That becomes your budget. Then log expenses as money goes out.
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.accent} />
+          </Pressable>
+        )}
 
         {/* Status insight */}
         <InsightStatusCard
@@ -318,10 +351,72 @@ export default function DashboardScreen() {
           </View>
         )}
 
+        {/* Recent income */}
+        {monthIncomes.length > 0 && (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
+              Income this month
+            </Text>
+            {monthIncomes.slice(0, 6).map((inc) => (
+              <View
+                key={inc.id}
+                style={[
+                  styles.incomeItem,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.incomeIcon,
+                    { backgroundColor: colors.accent + "22" },
+                  ]}
+                >
+                  <Ionicons
+                    name="arrow-down-circle-outline"
+                    size={18}
+                    color={colors.accent}
+                  />
+                </View>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text
+                    style={[styles.incomeSource, { color: colors.foreground }]}
+                    numberOfLines={1}
+                  >
+                    {inc.source}
+                  </Text>
+                  <Text
+                    style={[styles.incomeMeta, { color: colors.mutedForeground }]}
+                    numberOfLines={1}
+                  >
+                    {inc.date}
+                    {inc.note ? ` · ${inc.note}` : ""}
+                  </Text>
+                </View>
+                <Text style={[styles.incomeAmount, { color: colors.accent }]}>
+                  +{formatINR(inc.amount)}
+                </Text>
+                {canEdit && (
+                  <Pressable
+                    onPress={() => deleteIncome(inc.id)}
+                    hitSlop={8}
+                    style={{ padding: 4 }}
+                  >
+                    <Ionicons
+                      name="trash-outline"
+                      size={16}
+                      color={colors.mutedForeground}
+                    />
+                  </Pressable>
+                )}
+              </View>
+            ))}
+          </View>
+        )}
+
         {/* Recent expenses */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
-            {recentExpenses.length > 0 ? "Recent" : "No expenses yet"}
+            {recentExpenses.length > 0 ? "Recent expenses" : "No expenses yet"}
           </Text>
           {recentExpenses.map((exp) => (
             <ExpenseItem
@@ -347,11 +442,7 @@ export default function DashboardScreen() {
       <SettingsModal
         visible={settingsModalVisible}
         onClose={() => setSettingsModalVisible(false)}
-        currentBudget={budget}
-        onSaveBudget={(val) => {
-          setMonthBudget(month, val);
-          setSettingsModalVisible(false);
-        }}
+        budgetMonth={month}
       />
     </View>
   );
@@ -436,6 +527,23 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 20,
   },
+  startCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  startTitle: {
+    fontSize: 15,
+    fontFamily: "Inter_600SemiBold",
+  },
+  startBody: {
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    lineHeight: 18,
+  },
   ringRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -514,6 +622,33 @@ const styles = StyleSheet.create({
   seeAllText: {
     fontSize: 14,
     fontFamily: "Inter_500Medium",
+  },
+  incomeItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  incomeIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  incomeSource: {
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
+  },
+  incomeMeta: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+  },
+  incomeAmount: {
+    fontSize: 14,
+    fontFamily: "Inter_700Bold",
   },
   managerBanner: {
     flexDirection: "row",
