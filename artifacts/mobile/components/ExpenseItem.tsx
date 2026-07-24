@@ -2,22 +2,23 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import * as WebBrowser from "expo-web-browser";
 import React from "react";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { CategoryInfo, Expense, formatINR } from "@/context/ExpenseContext";
 import { useColors } from "@/hooks/useColors";
+import { confirmDestructive } from "@/lib/confirm";
 
 interface Props {
   expense: Expense;
   category?: CategoryInfo;
-  onDelete?: (id: string) => void;
+  onDelete?: (id: string) => void | Promise<void>;
   compact?: boolean;
 }
 
 export function ExpenseItem({ expense, category, onDelete, compact }: Props) {
   const colors = useColors();
   const catColor = category?.color ?? "#636E72";
-  const catIcon = (category?.icon ?? "grid-outline") as Parameters<typeof Ionicons>[0]["name"];
+  const catIcon = (category?.icon ?? "grid-outline") as any;
 
   const date = new Date(expense.date + "T00:00:00");
   const formattedDate = date.toLocaleDateString("en-IN", {
@@ -25,17 +26,18 @@ export function ExpenseItem({ expense, category, onDelete, compact }: Props) {
     month: "short",
   });
 
-  const handleLongPress = async () => {
+  const handleDelete = async () => {
     if (!onDelete) return;
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    Alert.alert("Delete expense?", `${expense.category} — ${formatINR(expense.amount)}`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: () => onDelete(expense.id),
-      },
-    ]);
+    const noteBit = expense.note ? ` — ${expense.note}` : "";
+    const ok = await confirmDestructive(
+      "Delete expense?",
+      `${expense.category}${noteBit}\n${formatINR(expense.amount)}\n\nThis cannot be undone.`,
+      "Delete"
+    );
+    if (!ok) return;
+    await onDelete(expense.id);
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
   const openBill = async () => {
@@ -45,14 +47,12 @@ export function ExpenseItem({ expense, category, onDelete, compact }: Props) {
   };
 
   return (
-    <Pressable
-      onLongPress={handleLongPress}
-      style={({ pressed }) => [
+    <View
+      style={[
         styles.container,
         {
           backgroundColor: colors.card,
           borderColor: colors.border,
-          opacity: pressed ? 0.75 : 1,
           paddingVertical: compact ? 10 : 14,
         },
       ]}
@@ -84,13 +84,40 @@ export function ExpenseItem({ expense, category, onDelete, compact }: Props) {
       <View style={styles.right}>
         <View style={styles.amountRow}>
           {expense.billUrl ? (
-            <Pressable onPress={openBill} hitSlop={8} style={styles.billBtn}>
+            <Pressable
+              onPress={openBill}
+              hitSlop={8}
+              style={styles.billBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Open bill"
+            >
               <Ionicons name="receipt-outline" size={14} color={colors.primary} />
             </Pressable>
           ) : null}
           <Text style={[styles.amount, { color: colors.foreground }]}>
             {formatINR(expense.amount)}
           </Text>
+          {onDelete ? (
+            <Pressable
+              onPress={handleDelete}
+              hitSlop={10}
+              style={({ pressed }) => [
+                styles.deleteBtn,
+                {
+                  backgroundColor: colors.destructive + (pressed ? "28" : "14"),
+                  borderColor: colors.destructive + "35",
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Delete expense"
+            >
+              <Ionicons
+                name="trash-outline"
+                size={15}
+                color={colors.destructive}
+              />
+            </Pressable>
+          ) : null}
         </View>
         {!compact && (
           <Text style={[styles.date, { color: colors.mutedForeground }]}>
@@ -98,7 +125,7 @@ export function ExpenseItem({ expense, category, onDelete, compact }: Props) {
           </Text>
         )}
       </View>
-    </Pressable>
+    </View>
   );
 }
 
@@ -141,6 +168,15 @@ const styles = StyleSheet.create({
   },
   billBtn: {
     padding: 2,
+  },
+  deleteBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 2,
   },
   amount: {
     fontSize: 15,

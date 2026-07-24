@@ -38,6 +38,7 @@ import {
   statusHeadline,
   sumExpenses,
 } from "@/lib/dashboardInsights";
+import { confirmDestructive } from "@/lib/confirm";
 
 export default function DashboardScreen() {
   const colors = useColors();
@@ -96,6 +97,17 @@ export default function DashboardScreen() {
   const topCategory = topCategories[0];
   const recentExpenses = monthExpenses.slice(0, 8);
   const chartWidth = Math.min(windowWidth - 64, 360);
+
+  const handleDeleteIncome = async (id: string, label: string) => {
+    const ok = await confirmDestructive(
+      "Delete income?",
+      `Remove ${label}?\n\nThis updates your available budget. This cannot be undone.`,
+      "Delete"
+    );
+    if (!ok) return;
+    await deleteIncome(id);
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
 
   const handleQuickAdd = async (template: (typeof quickTemplates)[0]) => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -397,14 +409,29 @@ export default function DashboardScreen() {
                 </Text>
                 {canEdit && (
                   <Pressable
-                    onPress={() => deleteIncome(inc.id)}
-                    hitSlop={8}
-                    style={{ padding: 4 }}
+                    onPress={() =>
+                      handleDeleteIncome(
+                        inc.id,
+                        `${formatINR(inc.amount)} (${inc.source})`
+                      )
+                    }
+                    hitSlop={12}
+                    style={({ pressed }) => [
+                      styles.incomeDeleteBtn,
+                      {
+                        backgroundColor:
+                          colors.destructive + (pressed ? "28" : "14"),
+                        borderColor: colors.destructive + "35",
+                        opacity: pressed ? 0.85 : 1,
+                      },
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Delete income"
                   >
                     <Ionicons
                       name="trash-outline"
                       size={16}
-                      color={colors.mutedForeground}
+                      color={colors.destructive}
                     />
                   </Pressable>
                 )}
@@ -649,6 +676,14 @@ const styles = StyleSheet.create({
   incomeAmount: {
     fontSize: 14,
     fontFamily: "Inter_700Bold",
+  },
+  incomeDeleteBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
   },
   managerBanner: {
     flexDirection: "row",

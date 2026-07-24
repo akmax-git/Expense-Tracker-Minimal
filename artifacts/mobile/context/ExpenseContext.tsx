@@ -85,6 +85,10 @@ interface ExpenseContextValue {
   isLoading: boolean;
   syncError: string | null;
   addExpense: (expense: Omit<Expense, "id" | "createdAt">) => Promise<void>;
+  updateExpense: (
+    id: string,
+    expense: Omit<Expense, "id" | "createdAt">
+  ) => Promise<void>;
   deleteExpense: (id: string) => Promise<void>;
   addIncome: (income: Omit<Income, "id" | "createdAt">) => Promise<void>;
   deleteIncome: (id: string) => Promise<void>;
@@ -253,7 +257,7 @@ export function ExpenseProvider({
             const r = payload.new as any;
             const newExp: Expense = {
               id: r.id,
-              amount: r.amount,
+              amount: Number(r.amount),
               category: r.category,
               note: r.note ?? "",
               date: r.date,
@@ -264,6 +268,23 @@ export function ExpenseProvider({
               if (prev.find((e) => e.id === newExp.id)) return prev;
               return [newExp, ...prev];
             });
+          } else if (payload.eventType === "UPDATE") {
+            const r = payload.new as any;
+            setExpenses((prev) =>
+              prev.map((e) =>
+                e.id === r.id
+                  ? {
+                      id: r.id,
+                      amount: Number(r.amount),
+                      category: r.category,
+                      note: r.note ?? "",
+                      date: r.date,
+                      billUrl: r.bill_url ?? null,
+                      createdAt: r.created_at,
+                    }
+                  : e
+              )
+            );
           } else if (payload.eventType === "DELETE") {
             setExpenses((prev) =>
               prev.filter((e) => e.id !== (payload.old as any).id)
@@ -353,43 +374,87 @@ export function ExpenseProvider({
       if (error) {
         setExpenses((prev) => prev.filter((e) => e.id !== id));
         setSyncError(error.message);
+        throw new Error(error.message);
       }
     },
     [userId]
   );
 
+  const updateExpense = useCallback(
+    async (id: string, expense: Omit<Expense, "id" | "createdAt">) => {
+      const previous = expenses;
+      const existing = expenses.find((e) => e.id === id);
+      if (!existing) {
+        throw new Error("Expense not found");
+      }
+
+      const updated: Expense = {
+        ...existing,
+        amount: expense.amount,
+        category: expense.category,
+        note: expense.note,
+        date: expense.date,
+        billUrl: expense.billUrl ?? null,
+      };
+
+      setExpenses((prev) => prev.map((e) => (e.id === id ? updated : e)));
+
+      const { data, error } = await supabase
+        .from("expenses")
+        .update({
+          amount: expense.amount,
+          category: expense.category,
+          note: expense.note,
+          date: expense.date,
+          bill_url: expense.billUrl ?? null,
+        })
+        .eq("id", id)
+        .eq("user_id", userId)
+        .select("id");
+
+      if (error) {
+        setExpenses(previous);
+        setSyncError(error.message);
+        throw new Error(error.message);
+      }
+
+      // RLS / wrong id can update 0 rows with no error — treat as failure
+      if (!data || data.length === 0) {
+        setExpenses(previous);
+        const msg = "Could not update expense. Please try again.";
+        setSyncError(msg);
+        throw new Error(msg);
+      }
+    },
+    [userId, expenses]
+  );
+
   const deleteExpense = useCallback(
     async (id: string) => {
+      const previous = expenses;
       setExpenses((prev) => prev.filter((e) => e.id !== id));
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("expenses")
         .delete()
         .eq("id", id)
-        .eq("user_id", userId);
+        .eq("user_id", userId)
+        .select("id");
 
       if (error) {
+        setExpenses(previous);
         setSyncError(error.message);
-        const { data } = await supabase
-          .from("expenses")
-          .select("*")
-          .eq("user_id", userId)
-          .order("date", { ascending: false });
-        if (data)
-          setExpenses(
-            data.map((r: any) => ({
-              id: r.id,
-              amount: r.amount,
-              category: r.category,
-              note: r.note ?? "",
-              date: r.date,
-              billUrl: r.bill_url ?? null,
-              createdAt: r.created_at,
-            }))
-          );
+        throw new Error(error.message);
+      }
+
+      if (!data || data.length === 0) {
+        setExpenses(previous);
+        const msg = "Could not delete expense. Please try again.";
+        setSyncError(msg);
+        throw new Error(msg);
       }
     },
-    [userId]
+    [userId, expenses]
   );
 
   // ─── Budgets & Income ─────────────────────────────────────────────────────
@@ -603,6 +668,7 @@ export function ExpenseProvider({
         isLoading,
         syncError,
         addExpense,
+        updateExpense,
         deleteExpense,
         addIncome,
         deleteIncome,

@@ -28,6 +28,7 @@ import {
 } from "@/context/ExpenseContext";
 import { useManager } from "@/context/ManagerContext";
 import { useColors } from "@/hooks/useColors";
+import { confirmDestructive } from "@/lib/confirm";
 import { billDisplayName, isImageBill, pickBillFile } from "@/lib/pickBill";
 import { uploadBill } from "@/lib/uploadBill";
 import { exportExpensesToExcel } from "@/utils/exportExpenses";
@@ -70,7 +71,7 @@ export default function RecordsScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { viewingAs, canEdit } = useManager();
-  const { expenses, allCategories, deleteExpense, addExpense, getCategoryInfo } =
+  const { expenses, allCategories, deleteExpense, updateExpense, getCategoryInfo } =
     useExpenses();
 
   const [search, setSearch] = useState("");
@@ -181,22 +182,15 @@ export default function RecordsScreen() {
       );
       return;
     }
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    Alert.alert(
-      "Delete Expense",
-      `Delete ₹${expense.amount} from ${expense.category}?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            await deleteExpense(expense.id);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          },
-        },
-      ]
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const ok = await confirmDestructive(
+      "Delete expense?",
+      `${expense.category} — ${formatINR(expense.amount)}\n\nThis cannot be undone.`,
+      "Delete"
     );
+    if (!ok) return;
+    await deleteExpense(expense.id);
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }
 
   async function handleSaveEdit() {
@@ -213,9 +207,8 @@ export default function RecordsScreen() {
         billUrl = await uploadBill(billOwnerId, editBillUri, editBillMime);
       }
 
-      // Delete old and re-add with new data (updateExpense pattern)
-      await deleteExpense(editTarget.id);
-      await addExpense({
+      // Update the same row in place (never delete+recreate — that caused duplicates)
+      await updateExpense(editTarget.id, {
         amount,
         category: editCategory,
         note: editNote,
