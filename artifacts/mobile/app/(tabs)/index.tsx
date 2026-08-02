@@ -48,6 +48,8 @@ export default function DashboardScreen() {
   const {
     getMonthExpenses,
     getMonthBudget,
+    getMonthOpeningBalance,
+    getMonthIncomeTotal,
     getMonthIncomes,
     quickTemplates,
     getCategoryInfo,
@@ -60,12 +62,15 @@ export default function DashboardScreen() {
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);
 
   const isCurrentMonth = month === currentMonth();
-  const budget = getMonthBudget(month);
+  const openingBalance = getMonthOpeningBalance(month);
+  const surplusAdded = getMonthIncomeTotal(month);
+  const budget = getMonthBudget(month); // opening + new surplus
   const monthIncomes = getMonthIncomes(month);
   const monthExpenses = getMonthExpenses(month);
   const prevMonthExpenses = getMonthExpenses(monthOffset(month, -1));
   const spent = sumExpenses(monthExpenses);
   const remaining = budget - spent;
+  const prevMonthLabel = formatMonth(monthOffset(month, -1));
 
   const pace = useMemo(
     () => paceMetrics({ spent, budget, month }),
@@ -230,7 +235,36 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* Fresh start: no income yet */}
+        {/* Prior month leftover rolls into this month's Cash Surplus */}
+        {openingBalance > 0 && (
+          <View
+            style={[
+              styles.carryCard,
+              {
+                backgroundColor: colors.primary + "12",
+                borderColor: colors.primary + "30",
+              },
+            ]}
+          >
+            <Ionicons name="sync-outline" size={18} color={colors.primary} />
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={[styles.carryTitle, { color: colors.primary }]}>
+                Carried from {prevMonthLabel}
+              </Text>
+              <Text style={[styles.carryBody, { color: colors.foreground }]}>
+                {formatINR(openingBalance)} Cash Balance brought forward
+                {surplusAdded > 0
+                  ? ` + ${formatINR(surplusAdded)} new this month`
+                  : ""}
+              </Text>
+            </View>
+            <Text style={[styles.carryAmount, { color: colors.primary }]}>
+              {formatINR(openingBalance)}
+            </Text>
+          </View>
+        )}
+
+        {/* Fresh start: no surplus and no carry yet */}
         {budget <= 0 && canEdit && (
           <Pressable
             onPress={() => router.push("/(tabs)/add")}
@@ -249,7 +283,7 @@ export default function DashboardScreen() {
               </Text>
               <Text style={[styles.startBody, { color: colors.mutedForeground }]}>
                 When money comes in (e.g. ₹84,000 from boss), add it as Cash
-                Surplus. Cash Balance = Cash Surplus − Spent.
+                Surplus. Leftover Cash Balance auto-carries to the next month.
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.accent} />
@@ -264,7 +298,9 @@ export default function DashboardScreen() {
           subtitle={
             topCategory
               ? `Biggest: ${topCategory.label} (${formatINR(topCategory.value)})`
-              : null
+              : openingBalance > 0 && spent === 0
+                ? `Includes ${formatINR(openingBalance)} carried from ${prevMonthLabel}`
+                : null
           }
         />
 
@@ -575,6 +611,29 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: "Inter_400Regular",
     lineHeight: 18,
+  },
+  carryCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  carryTitle: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  carryBody: {
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    lineHeight: 18,
+  },
+  carryAmount: {
+    fontSize: 15,
+    fontFamily: "Inter_700Bold",
   },
   ringRow: {
     flexDirection: "row",

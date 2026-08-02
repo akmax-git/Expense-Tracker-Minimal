@@ -158,6 +158,8 @@ export function SettingsModal({
     removeCustomCategory,
     getMonthIncomes,
     getMonthIncomeTotal,
+    getMonthOpeningBalance,
+    getMonthBudget,
     addIncome,
     deleteIncome,
   } = useExpenses();
@@ -176,7 +178,9 @@ export function SettingsModal({
 
   const monthKey = budgetMonth ?? currentMonth();
   const monthIncomes = getMonthIncomes(monthKey);
-  const incomeTotal = getMonthIncomeTotal(monthKey);
+  const surplusAdded = getMonthIncomeTotal(monthKey);
+  const openingBalance = getMonthOpeningBalance(monthKey);
+  const incomeTotal = getMonthBudget(monthKey);
 
   const [incomeAmount, setIncomeAmount] = useState("");
   const [incomeSource, setIncomeSource] = useState("Boss / Transfer");
@@ -424,9 +428,29 @@ export function SettingsModal({
             ]}
           >
             <Text style={[styles.budgetLabel, { color: colors.mutedForeground }]}>
-              Money in is Cash Surplus. Log every transfer (e.g. from boss).
-              Cash Balance = Cash Surplus − Spent, and updates automatically.
+              Money in is Cash Surplus. Leftover Cash Balance from last month
+              carries forward automatically. Cash Balance = Cash Surplus − Spent.
             </Text>
+            {openingBalance > 0 && (
+              <View
+                style={[
+                  styles.incomeTotalRow,
+                  {
+                    backgroundColor: colors.primary + "12",
+                    borderColor: colors.primary + "30",
+                  },
+                ]}
+              >
+                <Text
+                  style={[styles.incomeTotalLabel, { color: colors.mutedForeground }]}
+                >
+                  Carried from last month
+                </Text>
+                <Text style={[styles.incomeTotalValue, { color: colors.primary }]}>
+                  {formatINR(openingBalance)}
+                </Text>
+              </View>
+            )}
             <View
               style={[
                 styles.incomeTotalRow,
@@ -434,7 +458,12 @@ export function SettingsModal({
               ]}
             >
               <Text style={[styles.incomeTotalLabel, { color: colors.mutedForeground }]}>
-                This month Cash Surplus
+                Total Cash Surplus
+                {surplusAdded > 0 || openingBalance > 0
+                  ? ` (${openingBalance > 0 ? "carry" : ""}${
+                      openingBalance > 0 && surplusAdded > 0 ? " + " : ""
+                    }${surplusAdded > 0 ? "new" : ""})`
+                  : ""}
               </Text>
               <Text style={[styles.incomeTotalValue, { color: colors.accent }]}>
                 {formatINR(incomeTotal)}
@@ -516,7 +545,9 @@ export function SettingsModal({
             <View style={{ marginTop: 12, gap: 8 }}>
               {monthIncomes.length === 0 ? (
                 <Text style={[styles.budgetLocked, { color: colors.mutedForeground }]}>
-                  No Cash Surplus recorded yet for this month.
+                  {openingBalance > 0
+                    ? "No new Cash Surplus entries this month — using carried Cash Balance from last month."
+                    : "No Cash Surplus recorded yet for this month."}
                 </Text>
               ) : (
                 monthIncomes.map((inc) => (

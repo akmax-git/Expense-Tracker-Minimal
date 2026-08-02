@@ -7,6 +7,7 @@ import React, {
   useState,
 } from "react";
 
+import { getMonthCashSurplus, getOpeningBalance } from "@/lib/cashFlow";
 import { supabase } from "@/lib/supabase";
 
 export interface Expense {
@@ -93,11 +94,17 @@ interface ExpenseContextValue {
   addIncome: (income: Omit<Income, "id" | "createdAt">) => Promise<void>;
   deleteIncome: (id: string) => Promise<void>;
   setMonthBudget: (month: string, amount: number) => Promise<void>;
-  /** Effective budget = sum of income entries for the month (no manual target). */
+  /**
+   * Cash Surplus for the month = prior Cash Balance carried forward
+   * + new surplus entries logged this month.
+   */
   getMonthBudget: (month: string) => number;
+  /** Leftover Cash Balance from all previous months (carried into this month). */
+  getMonthOpeningBalance: (month: string) => number;
+  /** New Cash Surplus entries logged in this month only (excludes carry). */
   getMonthIncomeTotal: (month: string) => number;
   getMonthIncomes: (month: string) => Income[];
-  /** True when at least one income entry exists for the month. */
+  /** True when there is carry-forward and/or new surplus this month. */
   isIncomeDrivenBudget: (month: string) => boolean;
   getMonthExpenses: (month: string) => Expense[];
   getDayExpenses: (date: string) => Expense[];
@@ -470,9 +477,15 @@ export function ExpenseProvider({
     [getMonthIncomes]
   );
 
+  const getMonthOpeningBalance = useCallback(
+    (month: string) => getOpeningBalance(month, incomes, expenses),
+    [incomes, expenses]
+  );
+
   const isIncomeDrivenBudget = useCallback(
-    (month: string) => getMonthIncomes(month).length > 0,
-    [getMonthIncomes]
+    (month: string) =>
+      getMonthOpeningBalance(month) > 0 || getMonthIncomes(month).length > 0,
+    [getMonthOpeningBalance, getMonthIncomes]
   );
 
   const addIncome = useCallback(
@@ -547,8 +560,8 @@ export function ExpenseProvider({
   );
 
   const getMonthBudget = useCallback(
-    (month: string) => getMonthIncomeTotal(month),
-    [getMonthIncomeTotal]
+    (month: string) => getMonthCashSurplus(month, incomes, expenses),
+    [incomes, expenses]
   );
 
   const getMonthExpenses = useCallback(
@@ -674,6 +687,7 @@ export function ExpenseProvider({
         deleteIncome,
         setMonthBudget,
         getMonthBudget,
+        getMonthOpeningBalance,
         getMonthIncomeTotal,
         getMonthIncomes,
         isIncomeDrivenBudget,

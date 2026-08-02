@@ -63,6 +63,13 @@ export function sumExpenses(expenses: Expense[]): number {
   return expenses.reduce((s, e) => s + e.amount, 0);
 }
 
+// Re-export cash carry helpers for convenience
+export {
+  getMonthCashSurplus,
+  getOpeningBalance,
+  monthKeyFromDate,
+} from "@/lib/cashFlow";
+
 export function categoryBreakdown(
   expenses: Expense[],
   limit?: number
@@ -205,8 +212,8 @@ export function statusHeadline(
     return {
       title: "No Cash Surplus",
       message: isManagerMode
-        ? "Add Cash Surplus when money is received to start tracking spend against it."
-        : "Add Cash Surplus first (boss transfer, salary, etc.). Cash Balance = Cash Surplus − Spent.",
+        ? "Add Cash Surplus when money is received. Leftover Cash Balance carries to the next month."
+        : "Add Cash Surplus first (boss transfer, salary, etc.). Leftover Cash Balance auto-carries into the next month.",
     };
   }
 
