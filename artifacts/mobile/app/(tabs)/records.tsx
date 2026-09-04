@@ -22,8 +22,10 @@ import { CategoryGrid } from "@/components/CategoryGrid";
 import { useAuth } from "@/context/AuthContext";
 import {
   Expense,
+  currentMonth,
   dateToString,
   formatINR,
+  formatMonth,
   useExpenses,
 } from "@/context/ExpenseContext";
 import { useManager } from "@/context/ManagerContext";
@@ -35,6 +37,8 @@ import { exportExpensesToExcel } from "@/utils/exportExpenses";
 
 const GREEN = "#00C853";
 const BLUE = "#1565C0";
+
+type BillFilter = "all" | "with_bill" | "no_bill";
 
 function todayStr() {
   return dateToString(new Date());
@@ -66,6 +70,13 @@ function formatDateFull(dateStr: string): string {
   });
 }
 
+function monthChipLabel(month: string): string {
+  const parts = formatMonth(month).split(" ");
+  // "August 2026" → "Aug 2026" style short
+  const d = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1);
+  return d.toLocaleDateString("en-IN", { month: "short", year: "numeric" });
+}
+
 export default function RecordsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -75,6 +86,9 @@ export default function RecordsScreen() {
     useExpenses();
 
   const [search, setSearch] = useState("");
+  const [filterMonth, setFilterMonth] = useState<string | null>(currentMonth());
+  const [filterCategory, setFilterCategory] = useState<string | null>(null);
+  const [filterBill, setFilterBill] = useState<BillFilter>("all");
   const [editTarget, setEditTarget] = useState<Expense | null>(null);
   const [showEdit, setShowEdit] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -95,17 +109,52 @@ export default function RecordsScreen() {
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
   const billOwnerId = viewingAs ?? user?.id;
 
-  // Filter expenses by search
+  const availableMonths = useMemo(() => {
+    const set = new Set<string>();
+    set.add(currentMonth());
+    expenses.forEach((e) => {
+      if (e.date?.length >= 7) set.add(e.date.slice(0, 7));
+    });
+    return [...set].sort((a, b) => b.localeCompare(a));
+  }, [expenses]);
+
+  const hasActiveFilters =
+    filterMonth !== null ||
+    filterCategory !== null ||
+    filterBill !== "all" ||
+    search.trim().length > 0;
+
+  const clearFilters = () => {
+    setSearch("");
+    setFilterMonth(null);
+    setFilterCategory(null);
+    setFilterBill("all");
+  };
+
+  // Filter expenses by search + month + category + bill
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
-    if (!q) return expenses;
-    return expenses.filter(
-      (e) =>
-        e.category.toLowerCase().includes(q) ||
-        e.note.toLowerCase().includes(q) ||
-        String(e.amount).includes(q)
-    );
-  }, [expenses, search]);
+    return expenses.filter((e) => {
+      if (filterMonth && !e.date.startsWith(filterMonth)) return false;
+      if (filterCategory && e.category !== filterCategory) return false;
+      if (filterBill === "with_bill" && !e.billUrl) return false;
+      if (filterBill === "no_bill" && e.billUrl) return false;
+      if (
+        q &&
+        !e.category.toLowerCase().includes(q) &&
+        !e.note.toLowerCase().includes(q) &&
+        !String(e.amount).includes(q)
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [expenses, search, filterMonth, filterCategory, filterBill]);
+
+  const filteredTotal = useMemo(
+    () => filtered.reduce((s, e) => s + e.amount, 0),
+    [filtered]
+  );
 
   // Group by date
   const grouped = useMemo(() => {
@@ -256,7 +305,8 @@ export default function RecordsScreen() {
           <View style={styles.headerRight}>
             <View style={[styles.totalBadge, { backgroundColor: colors.secondary }]}>
               <Text style={[styles.totalBadgeText, { color: colors.primary }]}>
-                {formatINR(totalAll)} total
+                {formatINR(hasActiveFilters ? filteredTotal : totalAll)}
+                {hasActiveFilters ? " filtered" : " total"}
               </Text>
             </View>
             <Pressable
@@ -288,7 +338,7 @@ export default function RecordsScreen() {
           <TextInput
             value={search}
             onChangeText={setSearch}
-            placeholder="Search by category or note..."
+            placeholder="Search by category, note, or amount..."
             placeholderTextColor={colors.mutedForeground}
             style={[styles.searchInput, { color: colors.foreground }]}
           />
@@ -298,6 +348,108 @@ export default function RecordsScreen() {
             </Pressable>
           )}
         </View>
+
+        {/* Month filter */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chips}
+        >
+          <FilterChip
+            label="All months"
+            active={filterMonth === null}
+            onPress={() => setFilterMonth(null)}
+            colors={colors}
+          />
+          {availableMonths.map((m) => (
+            <FilterChip
+              key={m}
+              label={monthChipLabel(m)}
+              active={filterMonth === m}
+              onPress={() => setFilterMonth(filterMonth === m ? null : m)}
+              colors={colors}
+            />
+          ))}
+        </ScrollView>
+
+        {/* Category filter */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chips}
+        >
+          <FilterChip
+            label="All categories"
+            active={filterCategory === null}
+            onPress={() => setFilterCategory(null)}
+            colors={colors}
+          />
+          {allCategories.map((cat) => (
+            <FilterChip
+              key={cat.name}
+              label={cat.name}
+              active={filterCategory === cat.name}
+              onPress={() =>
+                setFilterCategory(filterCategory === cat.name ? null : cat.name)
+              }
+              colors={colors}
+              color={cat.color}
+            />
+          ))}
+        </ScrollView>
+
+        {/* Bill + clear */}
+        <View style={styles.filterFooter}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={[styles.chips, { flexGrow: 1 }]}
+          >
+            <FilterChip
+              label="All bills"
+              active={filterBill === "all"}
+              onPress={() => setFilterBill("all")}
+              colors={colors}
+            />
+            <FilterChip
+              label="With bill"
+              active={filterBill === "with_bill"}
+              onPress={() =>
+                setFilterBill(filterBill === "with_bill" ? "all" : "with_bill")
+              }
+              colors={colors}
+            />
+            <FilterChip
+              label="No bill"
+              active={filterBill === "no_bill"}
+              onPress={() =>
+                setFilterBill(filterBill === "no_bill" ? "all" : "no_bill")
+              }
+              colors={colors}
+            />
+          </ScrollView>
+          {hasActiveFilters && (
+            <Pressable
+              onPress={clearFilters}
+              hitSlop={8}
+              style={[
+                styles.clearBtn,
+                { borderColor: colors.border, backgroundColor: colors.card },
+              ]}
+            >
+              <Ionicons name="close" size={14} color={colors.mutedForeground} />
+              <Text style={[styles.clearBtnText, { color: colors.mutedForeground }]}>
+                Clear
+              </Text>
+            </Pressable>
+          )}
+        </View>
+
+        <Text style={[styles.resultMeta, { color: colors.mutedForeground }]}>
+          {filtered.length} record{filtered.length !== 1 ? "s" : ""}
+          {filterMonth ? ` · ${formatMonth(filterMonth)}` : ""}
+          {filterCategory ? ` · ${filterCategory}` : ""}
+        </Text>
       </View>
 
       {/* List */}
@@ -312,13 +464,21 @@ export default function RecordsScreen() {
           <View style={styles.emptyState}>
             <Text style={{ fontSize: 48 }}>🧾</Text>
             <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-              {search ? "No results" : "No expenses yet"}
+              {hasActiveFilters ? "No matching records" : "No expenses yet"}
             </Text>
             <Text style={[styles.emptySubtitle, { color: colors.mutedForeground }]}>
-              {search
-                ? `Nothing matched "${search}"`
+              {hasActiveFilters
+                ? "Try another month, category, or clear filters"
                 : "Tap + Add to record your first expense"}
             </Text>
+            {hasActiveFilters && (
+              <Pressable
+                onPress={clearFilters}
+                style={[styles.emptyClear, { backgroundColor: colors.primary }]}
+              >
+                <Text style={styles.emptyClearText}>Clear filters</Text>
+              </Pressable>
+            )}
           </View>
         ) : (
           grouped.map(([date, items]) => (
@@ -592,6 +752,59 @@ export default function RecordsScreen() {
   );
 }
 
+function FilterChip({
+  label,
+  active,
+  onPress,
+  colors,
+  color,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+  colors: ReturnType<typeof useColors>;
+  color?: string;
+}) {
+  const activeColor = color ?? colors.primary;
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[
+        chipStyles.chip,
+        {
+          backgroundColor: active ? activeColor + "22" : colors.card,
+          borderColor: active ? activeColor : colors.border,
+        },
+      ]}
+    >
+      <Text
+        style={[
+          chipStyles.text,
+          {
+            color: active ? activeColor : colors.mutedForeground,
+            fontFamily: active ? "Inter_600SemiBold" : "Inter_400Regular",
+          },
+        ]}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+const chipStyles = StyleSheet.create({
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginRight: 6,
+  },
+  text: {
+    fontSize: 12,
+  },
+});
+
 function ReceiptCard({
   expense,
   catColor,
@@ -696,45 +909,45 @@ function ReceiptCard({
 const styles = StyleSheet.create({
   root: { flex: 1 },
   header: {
-    paddingHorizontal: 20,
-    paddingBottom: 12,
+    paddingHorizontal: 16,
+    paddingBottom: 10,
     borderBottomWidth: 1,
-    gap: 12,
+    gap: 10,
   },
   headerTop: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
+  title: {
+    fontSize: 24,
+    fontFamily: "Inter_700Bold",
+  },
   headerRight: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
   },
+  totalBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  totalBadgeText: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+  },
   exportBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
   },
   exportBtnText: {
-    fontSize: 13,
-    fontFamily: "Inter_600SemiBold",
     color: "#fff",
-  },
-  title: {
-    fontSize: 24,
-    fontFamily: "Inter_700Bold",
-  },
-  totalBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 20,
-  },
-  totalBadgeText: {
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: "Inter_600SemiBold",
   },
   searchBox: {
@@ -750,6 +963,44 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     fontFamily: "Inter_400Regular",
+    outlineStyle: "none" as any,
+  },
+  chips: {
+    paddingRight: 8,
+    alignItems: "center",
+  },
+  filterFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  clearBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  clearBtnText: {
+    fontSize: 12,
+    fontFamily: "Inter_500Medium",
+  },
+  resultMeta: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+  },
+  emptyClear: {
+    marginTop: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  emptyClearText: {
+    color: "#fff",
+    fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
   },
   listContent: {
     paddingHorizontal: 16,

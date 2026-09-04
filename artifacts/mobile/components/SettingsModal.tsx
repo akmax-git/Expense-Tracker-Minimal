@@ -618,8 +618,8 @@ export function SettingsModal({
               </Text>
             </View>
             <Text style={[styles.managerCardSub, { color: colors.mutedForeground }]}>
-              Default categories stay for your existing expenses. Add your own
-              when you need more.
+              Default categories stay forever. Custom ones you add are saved to
+              your account and available every month — no need to re-add.
             </Text>
 
             <View style={{ marginTop: 10, gap: 8 }}>

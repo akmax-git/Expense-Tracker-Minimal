@@ -219,6 +219,7 @@ export function ExpenseProvider({
         setIsLoading(false);
       }
 
+      // Custom categories: Supabase (cloud) + migrate any local AsyncStorage leftovers
       try {
         const [qtStr, ccStr, legacyCcStr] = await Promise.all([
           AsyncStorage.getItem(LOCAL_KEYS.QUICK_TEMPLATES),
@@ -226,21 +227,79 @@ export function ExpenseProvider({
           AsyncStorage.getItem(LOCAL_KEYS.CUSTOM_CATEGORIES),
         ]);
         if (qtStr) setQuickTemplates(JSON.parse(qtStr) as QuickTemplate[]);
+
+        const localCats: CategoryInfo[] = [];
         if (ccStr) {
-          setCustomCategories(JSON.parse(ccStr) as CategoryInfo[]);
+          localCats.push(...(JSON.parse(ccStr) as CategoryInfo[]));
         } else if (legacyCcStr) {
-          // Migrate older device-wide custom categories into this user
-          const migrated = JSON.parse(legacyCcStr) as CategoryInfo[];
-          setCustomCategories(migrated);
-          AsyncStorage.setItem(
-            customCategoriesKey(userId),
-            JSON.stringify(migrated)
-          ).catch(() => {});
-        } else {
-          setCustomCategories([]);
+          localCats.push(...(JSON.parse(legacyCcStr) as CategoryInfo[]));
         }
+
+        const { data: catData, error: catError } = await supabase
+          .from("categories")
+          .select("name, icon, color")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: true });
+
+        const missingTable =
+          catError &&
+          (() => {
+            const msg = String(catError.message ?? "").toLowerCase();
+            return (
+              msg.includes("does not exist") ||
+              msg.includes("could not find the table") ||
+              msg.includes("schema cache") ||
+              catError.code === "42P01" ||
+              catError.code === "PGRST205"
+            );
+          })();
+
+        if (catError && !missingTable) {
+          setSyncError(catError.message);
+        }
+
+        const remoteCats: CategoryInfo[] = (catData ?? []).map((r: any) => ({
+          name: r.name as string,
+          icon: (r.icon as string) || "grid-outline",
+          color: (r.color as string) || "#636E72",
+        }));
+
+        // Merge local → remote so old device-only categories aren't lost
+        const byName = new Map<string, CategoryInfo>();
+        remoteCats.forEach((c) => byName.set(c.name.toLowerCase(), c));
+        const toUpload: CategoryInfo[] = [];
+        localCats.forEach((c) => {
+          const key = c.name.trim().toLowerCase();
+          if (!key || isDefaultCategory(c.name)) return;
+          if (!byName.has(key)) {
+            byName.set(key, c);
+            toUpload.push(c);
+          }
+        });
+
+        const merged = [...byName.values()];
+        setCustomCategories(merged);
+
+        if (!missingTable && toUpload.length > 0) {
+          await supabase.from("categories").upsert(
+            toUpload.map((c) => ({
+              id: generateId(),
+              user_id: userId,
+              name: c.name.trim(),
+              icon: c.icon || "grid-outline",
+              color: c.color || "#636E72",
+            })),
+            { onConflict: "user_id,name", ignoreDuplicates: true }
+          );
+        }
+
+        // Keep a local mirror for offline / before migration
+        AsyncStorage.setItem(
+          customCategoriesKey(userId),
+          JSON.stringify(merged)
+        ).catch(() => {});
       } catch {
-        // ignore
+        // ignore category load errors
       }
     }
     load();
@@ -621,13 +680,38 @@ export function ExpenseProvider({
 
       const updated = [...customCategories, next];
       setCustomCategories(updated);
+
+      const id = generateId();
+      const { error } = await supabase.from("categories").insert({
+        id,
+        user_id: userId,
+        name: next.name,
+        icon: next.icon,
+        color: next.color,
+      });
+
+      if (error) {
+        // Roll back memory if cloud save failed (except missing-table → keep local)
+        const msg = String(error.message ?? "").toLowerCase();
+        const missingTable =
+          msg.includes("does not exist") ||
+          msg.includes("could not find the table") ||
+          msg.includes("schema cache") ||
+          error.code === "42P01" ||
+          error.code === "PGRST205";
+        if (!missingTable) {
+          setCustomCategories(customCategories);
+          return error.message;
+        }
+      }
+
       try {
         await AsyncStorage.setItem(
           customCategoriesKey(userId),
           JSON.stringify(updated)
         );
       } catch {
-        // keep in-memory even if persist fails
+        // keep in-memory even if local persist fails
       }
       return null;
     },
@@ -639,13 +723,35 @@ export function ExpenseProvider({
       if (isDefaultCategory(name)) {
         return "Default categories cannot be deleted.";
       }
+      const trimmed = name.trim();
       const updated = customCategories.filter(
-        (c) => c.name.toLowerCase() !== name.trim().toLowerCase()
+        (c) => c.name.toLowerCase() !== trimmed.toLowerCase()
       );
       if (updated.length === customCategories.length) {
         return "Category not found.";
       }
       setCustomCategories(updated);
+
+      const { error } = await supabase
+        .from("categories")
+        .delete()
+        .eq("user_id", userId)
+        .ilike("name", trimmed);
+
+      if (error) {
+        const msg = String(error.message ?? "").toLowerCase();
+        const missingTable =
+          msg.includes("does not exist") ||
+          msg.includes("could not find the table") ||
+          msg.includes("schema cache") ||
+          error.code === "42P01" ||
+          error.code === "PGRST205";
+        if (!missingTable) {
+          setCustomCategories(customCategories);
+          return error.message;
+        }
+      }
+
       try {
         await AsyncStorage.setItem(
           customCategoriesKey(userId),
