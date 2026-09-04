@@ -108,6 +108,7 @@ export default function RecordsScreen() {
   const [editBillIsNew, setEditBillIsNew] = useState(false);
   const [editBillCleared, setEditBillCleared] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
@@ -122,15 +123,24 @@ export default function RecordsScreen() {
     return [...set].sort((a, b) => b.localeCompare(a));
   }, [expenses]);
 
+  const chipFilterCount =
+    (filterMonth !== null ? 1 : 0) +
+    (filterCategory !== null ? 1 : 0) +
+    (filterBill !== "all" ? 1 : 0) +
+    (filterStatus !== "all" ? 1 : 0);
+
   const hasActiveFilters =
-    filterMonth !== null ||
-    filterCategory !== null ||
-    filterBill !== "all" ||
-    filterStatus !== "all" ||
-    search.trim().length > 0;
+    chipFilterCount > 0 || search.trim().length > 0;
 
   const clearFilters = () => {
     setSearch("");
+    setFilterMonth(null);
+    setFilterCategory(null);
+    setFilterBill("all");
+    setFilterStatus("all");
+  };
+
+  const clearChipFilters = () => {
     setFilterMonth(null);
     setFilterCategory(null);
     setFilterBill("all");
@@ -405,81 +415,54 @@ export default function RecordsScreen() {
           )}
         </View>
 
-        {/* Month filter */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chips}
-        >
-          <FilterChip
-            label="All months"
-            active={filterMonth === null}
-            onPress={() => setFilterMonth(null)}
-          />
-          {availableMonths.map((m) => (
-            <FilterChip
-              key={m}
-              label={monthChipLabel(m)}
-              active={filterMonth === m}
-              onPress={() => setFilterMonth(filterMonth === m ? null : m)}
-            />
-          ))}
-        </ScrollView>
-
-        {/* Category filter */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chips}
-        >
-          <FilterChip
-            label="All categories"
-            active={filterCategory === null}
-            onPress={() => setFilterCategory(null)}
-          />
-          {allCategories.map((cat) => (
-            <FilterChip
-              key={cat.name}
-              label={cat.name}
-              active={filterCategory === cat.name}
-              onPress={() =>
-                setFilterCategory(filterCategory === cat.name ? null : cat.name)
-              }
-              color={cat.color}
-            />
-          ))}
-        </ScrollView>
-
-        {/* Bill + status + clear */}
-        <View style={styles.filterFooter}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={[styles.chips, { flexGrow: 1 }]}
+        {/* Compact filter trigger */}
+        <View style={styles.filterBar}>
+          <Pressable
+            onPress={() => setShowFilters(true)}
+            accessibilityRole="button"
+            accessibilityLabel={`Filters${chipFilterCount ? `, ${chipFilterCount} active` : ""}`}
+            style={({ pressed }) => [
+              styles.filterBtn,
+              {
+                backgroundColor:
+                  chipFilterCount > 0 ? colors.primary + "14" : colors.card,
+                borderColor:
+                  chipFilterCount > 0 ? colors.primary : colors.border,
+                opacity: pressed ? 0.85 : 1,
+              },
+            ]}
           >
-            <FilterChip
-              label="All bills"
-              active={filterBill === "all"}
-              onPress={() => setFilterBill("all")}
+            <Ionicons
+              name="options-outline"
+              size={16}
+              color={chipFilterCount > 0 ? colors.primary : colors.foreground}
             />
-            <FilterChip
-              label="With bill"
-              active={filterBill === "with_bill"}
-              onPress={() =>
-                setFilterBill(filterBill === "with_bill" ? "all" : "with_bill")
-              }
-            />
-            <FilterChip
-              label="No bill"
-              active={filterBill === "no_bill"}
-              onPress={() =>
-                setFilterBill(filterBill === "no_bill" ? "all" : "no_bill")
-              }
-            />
-          </ScrollView>
-          {hasActiveFilters && (
+            <Text
+              style={[
+                styles.filterBtnText,
+                {
+                  color:
+                    chipFilterCount > 0 ? colors.primary : colors.foreground,
+                },
+              ]}
+            >
+              Filters
+            </Text>
+            {chipFilterCount > 0 ? (
+              <View
+                style={[
+                  styles.filterCountBadge,
+                  { backgroundColor: colors.primary },
+                ]}
+              >
+                <Text style={styles.filterCountText}>{chipFilterCount}</Text>
+              </View>
+            ) : null}
+          </Pressable>
+
+          {chipFilterCount > 0 ? (
             <Pressable
-              onPress={clearFilters}
+              onPress={clearChipFilters}
               hitSlop={8}
               style={[
                 styles.clearBtn,
@@ -487,49 +470,137 @@ export default function RecordsScreen() {
               ]}
             >
               <Ionicons name="close" size={14} color={colors.mutedForeground} />
-              <Text style={[styles.clearBtnText, { color: colors.mutedForeground }]}>
+              <Text
+                style={[styles.clearBtnText, { color: colors.mutedForeground }]}
+              >
                 Clear
               </Text>
             </Pressable>
-          )}
+          ) : null}
         </View>
 
-        {/* Approval status filter */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chips}
-        >
-          <FilterChip
-            label="All status"
-            active={filterStatus === "all"}
-            onPress={() => setFilterStatus("all")}
-          />
-          <FilterChip
-            label={pendingCount > 0 ? `Pending (${pendingCount})` : "Pending"}
-            active={filterStatus === "pending"}
-            onPress={() =>
-              setFilterStatus(filterStatus === "pending" ? "all" : "pending")
-            }
-            color={colors.warning}
-          />
-          <FilterChip
-            label="Approved"
-            active={filterStatus === "approved"}
-            onPress={() =>
-              setFilterStatus(filterStatus === "approved" ? "all" : "approved")
-            }
-            color={colors.success}
-          />
-          <FilterChip
-            label="Rejected"
-            active={filterStatus === "rejected"}
-            onPress={() =>
-              setFilterStatus(filterStatus === "rejected" ? "all" : "rejected")
-            }
-            color={colors.destructive}
-          />
-        </ScrollView>
+        {/* Active filter summary chips */}
+        {chipFilterCount > 0 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.activeFilterRow}
+          >
+            {filterMonth ? (
+              <Pressable
+                onPress={() => setFilterMonth(null)}
+                style={[
+                  styles.activeChip,
+                  {
+                    backgroundColor: colors.primary + "14",
+                    borderColor: colors.primary + "40",
+                  },
+                ]}
+              >
+                <Text style={[styles.activeChipText, { color: colors.primary }]}>
+                  {monthChipLabel(filterMonth)}
+                </Text>
+                <Ionicons name="close" size={12} color={colors.primary} />
+              </Pressable>
+            ) : null}
+            {filterCategory ? (
+              <Pressable
+                onPress={() => setFilterCategory(null)}
+                style={[
+                  styles.activeChip,
+                  {
+                    backgroundColor: colors.secondary,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[styles.activeChipText, { color: colors.foreground }]}
+                >
+                  {filterCategory}
+                </Text>
+                <Ionicons
+                  name="close"
+                  size={12}
+                  color={colors.mutedForeground}
+                />
+              </Pressable>
+            ) : null}
+            {filterBill !== "all" ? (
+              <Pressable
+                onPress={() => setFilterBill("all")}
+                style={[
+                  styles.activeChip,
+                  {
+                    backgroundColor: colors.secondary,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[styles.activeChipText, { color: colors.foreground }]}
+                >
+                  {filterBill === "with_bill" ? "With bill" : "No bill"}
+                </Text>
+                <Ionicons
+                  name="close"
+                  size={12}
+                  color={colors.mutedForeground}
+                />
+              </Pressable>
+            ) : null}
+            {filterStatus !== "all" ? (
+              <Pressable
+                onPress={() => setFilterStatus("all")}
+                style={[
+                  styles.activeChip,
+                  {
+                    backgroundColor:
+                      filterStatus === "pending"
+                        ? colors.warning + "18"
+                        : filterStatus === "rejected"
+                          ? colors.destructive + "18"
+                          : colors.success + "18",
+                    borderColor:
+                      filterStatus === "pending"
+                        ? colors.warning + "40"
+                        : filterStatus === "rejected"
+                          ? colors.destructive + "40"
+                          : colors.success + "40",
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.activeChipText,
+                    {
+                      color:
+                        filterStatus === "pending"
+                          ? colors.warning
+                          : filterStatus === "rejected"
+                            ? colors.destructive
+                            : colors.success,
+                      textTransform: "capitalize",
+                    },
+                  ]}
+                >
+                  {filterStatus}
+                </Text>
+                <Ionicons
+                  name="close"
+                  size={12}
+                  color={
+                    filterStatus === "pending"
+                      ? colors.warning
+                      : filterStatus === "rejected"
+                        ? colors.destructive
+                        : colors.success
+                  }
+                />
+              </Pressable>
+            ) : null}
+          </ScrollView>
+        ) : null}
 
         <Text style={[styles.resultMeta, { color: colors.mutedForeground }]}>
           {filtered.length} record{filtered.length !== 1 ? "s" : ""}
@@ -539,6 +610,212 @@ export default function RecordsScreen() {
           {formatINR(hasActiveFilters ? filteredTotal : totalAll)} approved
         </Text>
       </View>
+
+      {/* Filter sheet */}
+      <Modal
+        visible={showFilters}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowFilters(false)}
+      >
+        <View
+          style={[
+            styles.filterModalRoot,
+            {
+              backgroundColor: colors.background,
+              paddingTop: Platform.OS === "ios" ? 12 : topPad + 8,
+              paddingBottom: bottomPad + 16,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.filterModalHeader,
+              { borderBottomColor: colors.border },
+            ]}
+          >
+            <Pressable onPress={() => setShowFilters(false)} hitSlop={8}>
+              <Text
+                style={[styles.filterModalCancel, { color: colors.mutedForeground }]}
+              >
+                Cancel
+              </Text>
+            </Pressable>
+            <Text style={[styles.filterModalTitle, { color: colors.foreground }]}>
+              Filters
+            </Text>
+            <Pressable onPress={() => setShowFilters(false)} hitSlop={8}>
+              <Text style={[styles.filterModalDone, { color: colors.primary }]}>
+                Done
+              </Text>
+            </Pressable>
+          </View>
+
+          <ScrollView
+            contentContainerStyle={styles.filterModalContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.filterSection}>
+              <Text
+                style={[styles.filterSectionLabel, { color: colors.mutedForeground }]}
+              >
+                Month
+              </Text>
+              <View style={styles.chipWrap}>
+                <FilterChip
+                  label="All months"
+                  active={filterMonth === null}
+                  onPress={() => setFilterMonth(null)}
+                />
+                {availableMonths.map((m) => (
+                  <FilterChip
+                    key={m}
+                    label={monthChipLabel(m)}
+                    active={filterMonth === m}
+                    onPress={() =>
+                      setFilterMonth(filterMonth === m ? null : m)
+                    }
+                  />
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.filterSection}>
+              <Text
+                style={[styles.filterSectionLabel, { color: colors.mutedForeground }]}
+              >
+                Category
+              </Text>
+              <View style={styles.chipWrap}>
+                <FilterChip
+                  label="All categories"
+                  active={filterCategory === null}
+                  onPress={() => setFilterCategory(null)}
+                />
+                {allCategories.map((cat) => (
+                  <FilterChip
+                    key={cat.name}
+                    label={cat.name}
+                    active={filterCategory === cat.name}
+                    onPress={() =>
+                      setFilterCategory(
+                        filterCategory === cat.name ? null : cat.name
+                      )
+                    }
+                    color={cat.color}
+                  />
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.filterSection}>
+              <Text
+                style={[styles.filterSectionLabel, { color: colors.mutedForeground }]}
+              >
+                Bill
+              </Text>
+              <View style={styles.chipWrap}>
+                <FilterChip
+                  label="All bills"
+                  active={filterBill === "all"}
+                  onPress={() => setFilterBill("all")}
+                />
+                <FilterChip
+                  label="With bill"
+                  active={filterBill === "with_bill"}
+                  onPress={() =>
+                    setFilterBill(
+                      filterBill === "with_bill" ? "all" : "with_bill"
+                    )
+                  }
+                />
+                <FilterChip
+                  label="No bill"
+                  active={filterBill === "no_bill"}
+                  onPress={() =>
+                    setFilterBill(filterBill === "no_bill" ? "all" : "no_bill")
+                  }
+                />
+              </View>
+            </View>
+
+            <View style={styles.filterSection}>
+              <Text
+                style={[styles.filterSectionLabel, { color: colors.mutedForeground }]}
+              >
+                Status
+              </Text>
+              <View style={styles.chipWrap}>
+                <FilterChip
+                  label="All status"
+                  active={filterStatus === "all"}
+                  onPress={() => setFilterStatus("all")}
+                />
+                <FilterChip
+                  label={
+                    pendingCount > 0 ? `Pending (${pendingCount})` : "Pending"
+                  }
+                  active={filterStatus === "pending"}
+                  onPress={() =>
+                    setFilterStatus(
+                      filterStatus === "pending" ? "all" : "pending"
+                    )
+                  }
+                  color={colors.warning}
+                />
+                <FilterChip
+                  label="Approved"
+                  active={filterStatus === "approved"}
+                  onPress={() =>
+                    setFilterStatus(
+                      filterStatus === "approved" ? "all" : "approved"
+                    )
+                  }
+                  color={colors.success}
+                />
+                <FilterChip
+                  label="Rejected"
+                  active={filterStatus === "rejected"}
+                  onPress={() =>
+                    setFilterStatus(
+                      filterStatus === "rejected" ? "all" : "rejected"
+                    )
+                  }
+                  color={colors.destructive}
+                />
+              </View>
+            </View>
+          </ScrollView>
+
+          <View style={styles.filterModalFooter}>
+            {chipFilterCount > 0 ? (
+              <Pressable
+                onPress={clearChipFilters}
+                style={[
+                  styles.filterClearAll,
+                  { borderColor: colors.border, backgroundColor: colors.card },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.filterClearAllText,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
+                  Clear all
+                </Text>
+              </Pressable>
+            ) : (
+              <View style={{ flex: 1 }} />
+            )}
+            <PrimaryButton
+              label="Show results"
+              onPress={() => setShowFilters(false)}
+              style={{ flex: 1.4 }}
+            />
+          </View>
+        </View>
+      </Modal>
 
       {/* List */}
       <ScrollView
@@ -1078,31 +1355,139 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     outlineStyle: "none" as any,
   },
-  chips: {
-    paddingRight: 8,
-    alignItems: "center",
-  },
-  filterFooter: {
+  filterBar: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+  },
+  filterBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    minHeight: 40,
+  },
+  filterBtnText: {
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
+  },
+  filterCountBadge: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 5,
+  },
+  filterCountText: {
+    color: "#fff",
+    fontSize: 11,
+    fontFamily: "Inter_700Bold",
   },
   clearBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
     borderWidth: 1,
+    minHeight: 40,
   },
   clearBtnText: {
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: "Inter_500Medium",
+  },
+  activeFilterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingRight: 4,
+  },
+  activeChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  activeChipText: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
   },
   resultMeta: {
     fontSize: 12,
-    fontFamily: "Inter_400Regular",
+    fontFamily: "Inter_500Medium",
+  },
+  filterModalRoot: {
+    flex: 1,
+  },
+  filterModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+  },
+  filterModalCancel: {
+    fontSize: 15,
+    fontFamily: "Inter_500Medium",
+    minWidth: 64,
+  },
+  filterModalTitle: {
+    fontSize: 17,
+    fontFamily: "Inter_600SemiBold",
+  },
+  filterModalDone: {
+    fontSize: 15,
+    fontFamily: "Inter_600SemiBold",
+    minWidth: 64,
+    textAlign: "right",
+  },
+  filterModalContent: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 24,
+    gap: 24,
+  },
+  filterSection: {
+    gap: 10,
+  },
+  filterSectionLabel: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
+  },
+  chipWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  filterModalFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+  },
+  filterClearAll: {
+    flex: 1,
+    height: 52,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filterClearAllText: {
+    fontSize: 15,
+    fontFamily: "Inter_600SemiBold",
   },
   emptyClear: {
     marginTop: 12,

@@ -251,6 +251,8 @@ const styles = StyleSheet.create({
   },
   chips: {
     paddingHorizontal: 16,
+    gap: 8,
+    alignItems: "center",
   },
   resultRow: {
     flexDirection: "row",
