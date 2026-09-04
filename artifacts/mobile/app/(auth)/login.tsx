@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState } from "react";
@@ -15,19 +16,13 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { PrimaryButton } from "@/components/ui/PrimaryButton";
 import { useAuth } from "@/context/AuthContext";
-
-const GREEN = "#00C853";
-const BLUE = "#1565C0";
-const BLUE_DARK = "#0D47A1";
-const WHITE = "#FFFFFF";
-const MUTED = "#94A3B8";
-const BORDER = "#E2E8F0";
-const LABEL = "#64748B";
-const ERROR_RED = "#EF4444";
+import { useColors } from "@/hooks/useColors";
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
+  const colors = useColors();
   const { signInWithEmail, signInWithGoogle } = useAuth();
   const params = useLocalSearchParams<{ email?: string }>();
 
@@ -66,14 +61,12 @@ export default function LoginScreen() {
   }
 
   return (
-    <View style={styles.root}>
-      {/* Top hero section — deep navy */}
+    <View style={[styles.root, { backgroundColor: colors.card }]}>
       <LinearGradient
         colors={["#0A1628", "#0F1E38", "#07111E"]}
         style={styles.hero}
       >
-        {/* White logo badge */}
-        <View style={styles.logoBadge}>
+        <View style={[styles.logoBadge, { backgroundColor: colors.card }]}>
           <Image
             source={require("@/assets/images/lifeeasy-logo-nobg.png")}
             style={styles.logo}
@@ -84,10 +77,15 @@ export default function LoginScreen() {
         <Text style={styles.tagline}>Smart money. Simplified life.</Text>
       </LinearGradient>
 
-      {/* White form sheet */}
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={styles.sheet}
+        style={[
+          styles.sheet,
+          {
+            backgroundColor: colors.card,
+            ...colors.shadow.sheet,
+          },
+        ]}
       >
         <ScrollView
           contentContainerStyle={[
@@ -97,124 +95,200 @@ export default function LoginScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.title}>Welcome back</Text>
-          <Text style={styles.subtitle}>Sign in to your account</Text>
+          <Text style={[styles.title, { color: colors.foreground }]}>
+            Welcome back
+          </Text>
+          <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
+            Sign in to your account
+          </Text>
 
-          {/* Email */}
           <View style={styles.field}>
-            <Text style={styles.label}>EMAIL</Text>
+            <Text style={[styles.label, { color: colors.mutedForeground }]}>
+              EMAIL
+            </Text>
             <View
-              style={[styles.inputBox, emailFocused && styles.inputBoxFocused]}
+              style={[
+                styles.inputBox,
+                {
+                  borderColor: emailFocused ? colors.primary : colors.border,
+                  backgroundColor: emailFocused ? colors.card : colors.input,
+                  shadowColor: colors.primary,
+                  shadowOpacity: emailFocused ? 0.18 : 0,
+                  shadowRadius: emailFocused ? 6 : 0,
+                  shadowOffset: { width: 0, height: 0 },
+                  elevation: emailFocused ? 2 : 0,
+                },
+              ]}
             >
-              <Text style={styles.fieldIcon}>✉</Text>
+              <Ionicons
+                name="mail-outline"
+                size={18}
+                color={emailFocused ? colors.primary : colors.mutedForeground}
+              />
               <TextInput
                 value={email}
                 onChangeText={setEmail}
                 onFocus={() => setEmailFocused(true)}
                 onBlur={() => setEmailFocused(false)}
                 placeholder="you@example.com"
-                placeholderTextColor={MUTED}
+                placeholderTextColor={colors.mutedForeground}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
-                style={styles.input}
+                style={[styles.input, { color: colors.foreground }]}
+                accessibilityLabel="Email"
               />
             </View>
           </View>
 
-          {/* Password */}
           <View style={styles.field}>
-            <Text style={styles.label}>PASSWORD</Text>
+            <Text style={[styles.label, { color: colors.mutedForeground }]}>
+              PASSWORD
+            </Text>
             <View
-              style={[styles.inputBox, passFocused && styles.inputBoxFocused]}
+              style={[
+                styles.inputBox,
+                {
+                  borderColor: passFocused ? colors.primary : colors.border,
+                  backgroundColor: passFocused ? colors.card : colors.input,
+                  shadowColor: colors.primary,
+                  shadowOpacity: passFocused ? 0.18 : 0,
+                  shadowRadius: passFocused ? 6 : 0,
+                  shadowOffset: { width: 0, height: 0 },
+                  elevation: passFocused ? 2 : 0,
+                },
+              ]}
             >
-              <Text style={styles.fieldIcon}>🔒</Text>
+              <Ionicons
+                name="lock-closed-outline"
+                size={18}
+                color={passFocused ? colors.primary : colors.mutedForeground}
+              />
               <TextInput
                 value={password}
                 onChangeText={setPassword}
                 onFocus={() => setPassFocused(true)}
                 onBlur={() => setPassFocused(false)}
                 placeholder="••••••••"
-                placeholderTextColor={MUTED}
+                placeholderTextColor={colors.mutedForeground}
                 secureTextEntry={!showPass}
                 autoCapitalize="none"
-                style={styles.input}
+                style={[styles.input, { color: colors.foreground }]}
+                accessibilityLabel="Password"
               />
-              <Pressable onPress={() => setShowPass((v) => !v)} hitSlop={12}>
-                <Text style={{ fontSize: 15 }}>{showPass ? "🙈" : "👁"}</Text>
+              <Pressable
+                onPress={() => setShowPass((v) => !v)}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel={showPass ? "Hide password" : "Show password"}
+              >
+                <Ionicons
+                  name={showPass ? "eye-off-outline" : "eye-outline"}
+                  size={20}
+                  color={colors.mutedForeground}
+                />
               </Pressable>
             </View>
           </View>
 
-          {/* Forgot password */}
           <Pressable
             onPress={() => router.push("/(auth)/forgot-password")}
             hitSlop={8}
             style={styles.forgotRow}
+            accessibilityRole="link"
           >
-            <Text style={styles.forgotText}>Forgot password?</Text>
+            <Text style={[styles.forgotText, { color: colors.primary }]}>
+              Forgot password?
+            </Text>
           </Pressable>
 
-          {/* Error */}
-          {error && (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>⚠ {error}</Text>
-            </View>
-          )}
-
-          {/* Sign In */}
-          <Pressable
-            onPress={handleEmailLogin}
-            disabled={loading}
-            style={({ pressed }) => [{ opacity: pressed || loading ? 0.85 : 1, marginTop: 8 }]}
-          >
-            <LinearGradient
-              colors={[GREEN, "#00A844", BLUE_DARK]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.primaryBtn}
+          {error ? (
+            <View
+              style={[
+                styles.errorBox,
+                {
+                  backgroundColor: colors.destructive + "12",
+                  borderColor: colors.destructive + "35",
+                },
+              ]}
             >
-              {loading ? (
-                <ActivityIndicator color={WHITE} size="small" />
-              ) : (
-                <Text style={styles.primaryBtnText}>Sign In →</Text>
-              )}
-            </LinearGradient>
-          </Pressable>
+              <Ionicons
+                name="alert-circle-outline"
+                size={16}
+                color={colors.destructive}
+              />
+              <Text style={[styles.errorText, { color: colors.destructive }]}>
+                {error}
+              </Text>
+            </View>
+          ) : null}
 
-          {/* Divider */}
+          <PrimaryButton
+            label="Sign In"
+            onPress={handleEmailLogin}
+            loading={loading}
+            disabled={loading}
+            style={{ marginTop: 4 }}
+          />
+
           <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or</Text>
-            <View style={styles.dividerLine} />
+            <View
+              style={[styles.dividerLine, { backgroundColor: colors.border }]}
+            />
+            <Text style={[styles.dividerText, { color: colors.mutedForeground }]}>
+              or
+            </Text>
+            <View
+              style={[styles.dividerLine, { backgroundColor: colors.border }]}
+            />
           </View>
 
-          {/* Google */}
           <Pressable
             onPress={handleGoogle}
             disabled={googleLoading}
-            style={({ pressed }) => [
+            accessibilityRole="button"
+            accessibilityLabel="Continue with Google"
+            style={({ pressed, hovered }) => [
               styles.googleBtn,
-              { opacity: pressed || googleLoading ? 0.75 : 1 },
+              {
+                borderColor: colors.border,
+                backgroundColor: colors.card,
+                opacity: pressed || googleLoading ? 0.75 : hovered ? 0.92 : 1,
+              },
             ]}
           >
             {googleLoading ? (
-              <ActivityIndicator color={BLUE} size="small" />
+              <ActivityIndicator color={colors.primary} size="small" />
             ) : (
               <>
-                <View style={styles.googleIconBox}>
+                <View
+                  style={[
+                    styles.googleIconBox,
+                    { backgroundColor: colors.secondary },
+                  ]}
+                >
                   <Text style={styles.googleG}>G</Text>
                 </View>
-                <Text style={styles.googleText}>Continue with Google</Text>
+                <Text style={[styles.googleText, { color: colors.foreground }]}>
+                  Continue with Google
+                </Text>
               </>
             )}
           </Pressable>
 
-          {/* Switch */}
           <View style={styles.switchRow}>
-            <Text style={styles.switchText}>New to Lifeeasy?</Text>
-            <Pressable onPress={() => router.push("/(auth)/signup")} hitSlop={8}>
-              <Text style={styles.switchLink}> Create account</Text>
+            <Text style={[styles.switchText, { color: colors.mutedForeground }]}>
+              New to Lifeeasy?
+            </Text>
+            <Pressable
+              onPress={() => router.push("/(auth)/signup")}
+              hitSlop={8}
+              accessibilityRole="link"
+            >
+              <Text style={[styles.switchLink, { color: colors.success }]}>
+                {" "}
+                Create account
+              </Text>
             </Pressable>
           </View>
         </ScrollView>
@@ -226,7 +300,6 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: WHITE,
   },
   hero: {
     paddingTop: 72,
@@ -238,7 +311,6 @@ const styles = StyleSheet.create({
     width: 96,
     height: 96,
     borderRadius: 28,
-    backgroundColor: WHITE,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
@@ -255,7 +327,7 @@ const styles = StyleSheet.create({
   appName: {
     fontSize: 30,
     fontFamily: "Inter_700Bold",
-    color: WHITE,
+    color: "#FFFFFF",
     letterSpacing: -0.5,
   },
   tagline: {
@@ -265,15 +337,9 @@ const styles = StyleSheet.create({
   },
   sheet: {
     flex: 1,
-    backgroundColor: WHITE,
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     marginTop: -24,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 12,
   },
   scroll: {
     paddingHorizontal: 28,
@@ -283,13 +349,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontFamily: "Inter_700Bold",
-    color: "#0F172A",
+    letterSpacing: -0.3,
     marginBottom: 2,
   },
   subtitle: {
     fontSize: 14,
     fontFamily: "Inter_400Regular",
-    color: LABEL,
     marginTop: -8,
     marginBottom: 4,
   },
@@ -299,7 +364,6 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 11,
     fontFamily: "Inter_600SemiBold",
-    color: LABEL,
     letterSpacing: 0.8,
   },
   inputBox: {
@@ -308,58 +372,27 @@ const styles = StyleSheet.create({
     height: 52,
     borderRadius: 14,
     borderWidth: 1.5,
-    borderColor: BORDER,
-    backgroundColor: "#F8FAFC",
     paddingHorizontal: 14,
     gap: 10,
-  },
-  inputBoxFocused: {
-    borderColor: BLUE,
-    backgroundColor: WHITE,
-    shadowColor: BLUE,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  fieldIcon: {
-    fontSize: 14,
   },
   input: {
     flex: 1,
     fontSize: 15,
     fontFamily: "Inter_400Regular",
-    color: "#0F172A",
   },
   errorBox: {
-    backgroundColor: "#FEF2F2",
     borderWidth: 1,
-    borderColor: "#FECACA",
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   errorText: {
+    flex: 1,
     fontSize: 13,
     fontFamily: "Inter_400Regular",
-    color: ERROR_RED,
-  },
-  primaryBtn: {
-    height: 54,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: GREEN,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 14,
-    elevation: 8,
-  },
-  primaryBtnText: {
-    color: WHITE,
-    fontSize: 16,
-    fontFamily: "Inter_700Bold",
-    letterSpacing: 0.3,
   },
   divider: {
     flexDirection: "row",
@@ -369,34 +402,24 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: BORDER,
   },
   dividerText: {
     fontSize: 12,
     fontFamily: "Inter_400Regular",
-    color: MUTED,
   },
   googleBtn: {
     height: 52,
     borderRadius: 14,
     borderWidth: 1.5,
-    borderColor: BORDER,
-    backgroundColor: WHITE,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
   },
   googleIconBox: {
     width: 28,
     height: 28,
     borderRadius: 8,
-    backgroundColor: "#F1F5F9",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -408,7 +431,6 @@ const styles = StyleSheet.create({
   googleText: {
     fontSize: 15,
     fontFamily: "Inter_500Medium",
-    color: "#0F172A",
   },
   switchRow: {
     flexDirection: "row",
@@ -419,12 +441,10 @@ const styles = StyleSheet.create({
   switchText: {
     fontSize: 14,
     fontFamily: "Inter_400Regular",
-    color: LABEL,
   },
   switchLink: {
     fontSize: 14,
     fontFamily: "Inter_700Bold",
-    color: GREEN,
   },
   forgotRow: {
     alignSelf: "flex-end",
@@ -433,6 +453,5 @@ const styles = StyleSheet.create({
   forgotText: {
     fontSize: 13,
     fontFamily: "Inter_500Medium",
-    color: BLUE,
   },
 });

@@ -79,12 +79,13 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
 
         <Pressable
           onPress={handleRestart}
-          style={({ pressed }) => [
+          style={({ pressed, hovered }) => [
             styles.button,
             {
               backgroundColor: colors.primary,
-              opacity: pressed ? 0.9 : 1,
+              opacity: pressed ? 0.9 : hovered ? 0.94 : 1,
               transform: [{ scale: pressed ? 0.98 : 1 }],
+              ...colors.shadow.button,
             },
           ]}
         >
@@ -189,12 +190,14 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
-    fontWeight: "700",
+    fontFamily: "Inter_700Bold",
     textAlign: "center",
     lineHeight: 40,
+    letterSpacing: -0.3,
   },
   message: {
     fontSize: 16,
+    fontFamily: "Inter_400Regular",
     textAlign: "center",
     lineHeight: 24,
   },
@@ -203,7 +206,7 @@ const styles = StyleSheet.create({
     right: 16,
     width: 44,
     height: 44,
-    borderRadius: 8,
+    borderRadius: 12,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -211,20 +214,12 @@ const styles = StyleSheet.create({
   },
   button: {
     paddingVertical: 16,
-    borderRadius: 8,
+    borderRadius: 14,
     paddingHorizontal: 24,
     minWidth: 200,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
   buttonText: {
-    fontWeight: "600",
+    fontFamily: "Inter_600SemiBold",
     textAlign: "center",
     fontSize: 16,
   },
@@ -250,7 +245,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 20,
-    fontWeight: "600",
+    fontFamily: "Inter_600SemiBold",
   },
   closeButton: {
     width: 44,

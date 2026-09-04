@@ -8,6 +8,7 @@ export interface ExportableExpense {
   category: string;
   amount: number;
   note: string;
+  status?: string;
 }
 
 function formatDate(dateStr: string): string {
@@ -24,6 +25,10 @@ function formatWeekday(dateStr: string): string {
   return d.toLocaleDateString("en-IN", { weekday: "long" });
 }
 
+function isApproved(e: ExportableExpense): boolean {
+  return !e.status || e.status === "approved";
+}
+
 export async function exportExpensesToExcel(
   expenses: ExportableExpense[],
   ownerEmail?: string
@@ -36,7 +41,7 @@ export async function exportExpensesToExcel(
 
   // ── Sheet 1: All Expenses ─────────────────────────────────────
   const expenseRows = [
-    ["#", "Date", "Day", "Category", "Amount (₹)", "Note"],
+    ["#", "Date", "Day", "Category", "Amount (₹)", "Status", "Note"],
     ...expenses
       .slice()
       .sort((a, b) => b.date.localeCompare(a.date))
@@ -46,6 +51,7 @@ export async function exportExpensesToExcel(
         formatWeekday(e.date),
         e.category,
         e.amount,
+        (e.status ?? "approved").toUpperCase(),
         e.note || "",
       ]),
   ];
@@ -59,26 +65,28 @@ export async function exportExpensesToExcel(
     { wch: 12 }, // Day
     { wch: 18 }, // Category
     { wch: 14 }, // Amount
+    { wch: 12 }, // Status
     { wch: 36 }, // Note
   ];
 
   // Bold header row
   const headerStyle = { font: { bold: true }, fill: { fgColor: { rgb: "1565C0" } } };
-  ["A1", "B1", "C1", "D1", "E1", "F1"].forEach((cell) => {
+  ["A1", "B1", "C1", "D1", "E1", "F1", "G1"].forEach((cell) => {
     if (wsExpenses[cell]) wsExpenses[cell].s = headerStyle;
   });
 
   XLSX.utils.book_append_sheet(wb, wsExpenses, "All Expenses");
 
-  // ── Sheet 2: Category Summary ─────────────────────────────────
+  // ── Sheet 2: Category Summary (approved only) ─────────────────
+  const approved = expenses.filter(isApproved);
   const categoryMap: Record<string, { count: number; total: number }> = {};
-  for (const e of expenses) {
+  for (const e of approved) {
     if (!categoryMap[e.category]) categoryMap[e.category] = { count: 0, total: 0 };
     categoryMap[e.category].count += 1;
     categoryMap[e.category].total += e.amount;
   }
 
-  const grandTotal = expenses.reduce((s, e) => s + e.amount, 0);
+  const grandTotal = approved.reduce((s, e) => s + e.amount, 0);
   const categoryRows = [
     ["Category", "No. of Expenses", "Total Amount (₹)", "% of Spend"],
     ...Object.entries(categoryMap)
@@ -87,9 +95,9 @@ export async function exportExpensesToExcel(
         cat,
         count,
         total,
-        Number(((total / grandTotal) * 100).toFixed(1)),
+        grandTotal > 0 ? Number(((total / grandTotal) * 100).toFixed(1)) : 0,
       ]),
-    ["TOTAL", expenses.length, grandTotal, 100],
+    ["TOTAL (approved)", approved.length, grandTotal, 100],
   ];
 
   const wsSummary = XLSX.utils.aoa_to_sheet(categoryRows);
@@ -102,9 +110,9 @@ export async function exportExpensesToExcel(
 
   XLSX.utils.book_append_sheet(wb, wsSummary, "Category Summary");
 
-  // ── Sheet 3: Monthly Summary ──────────────────────────────────
+  // ── Sheet 3: Monthly Summary (approved only) ──────────────────
   const monthMap: Record<string, { count: number; total: number }> = {};
-  for (const e of expenses) {
+  for (const e of approved) {
     const month = e.date.slice(0, 7); // YYYY-MM
     if (!monthMap[month]) monthMap[month] = { count: 0, total: 0 };
     monthMap[month].count += 1;

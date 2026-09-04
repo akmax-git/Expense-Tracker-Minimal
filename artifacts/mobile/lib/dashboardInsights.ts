@@ -1,4 +1,8 @@
-import { formatINR, type Expense } from "@/context/ExpenseContext";
+import {
+  countsTowardSpend,
+  formatINR,
+  type Expense,
+} from "@/context/ExpenseContext";
 
 export type PaceStatus = "on_track" | "at_risk" | "over";
 
@@ -59,8 +63,11 @@ export function daysRemainingInMonth(month: string, today: Date = new Date()): n
   return daysInMonth(month) - today.getDate();
 }
 
+/** Sum only approved expenses (pending/rejected are excluded from totals). */
 export function sumExpenses(expenses: Expense[]): number {
-  return expenses.reduce((s, e) => s + e.amount, 0);
+  return expenses
+    .filter(countsTowardSpend)
+    .reduce((s, e) => s + e.amount, 0);
 }
 
 // Re-export cash carry helpers for convenience
@@ -74,9 +81,10 @@ export function categoryBreakdown(
   expenses: Expense[],
   limit?: number
 ): CategorySlice[] {
-  const total = sumExpenses(expenses);
+  const approved = expenses.filter(countsTowardSpend);
+  const total = sumExpenses(approved);
   const map: Record<string, number> = {};
-  expenses.forEach((e) => {
+  approved.forEach((e) => {
     map[e.category] = (map[e.category] ?? 0) + e.amount;
   });
   const slices = Object.entries(map)
@@ -95,7 +103,7 @@ export function dailySeriesForMonth(
 ): { date: string; amount: number }[] {
   const totalDays = daysInMonth(month);
   const byDate: Record<string, number> = {};
-  expenses.forEach((e) => {
+  expenses.filter(countsTowardSpend).forEach((e) => {
     if (e.date.startsWith(month)) {
       byDate[e.date] = (byDate[e.date] ?? 0) + e.amount;
     }
@@ -120,7 +128,7 @@ export function dailySeriesLastNDays(
     d.setDate(end.getDate() - i);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     const amount = expenses
-      .filter((e) => e.date === key)
+      .filter((e) => e.date === key && countsTowardSpend(e))
       .reduce((s, e) => s + e.amount, 0);
     result.push({ date: key, amount });
   }

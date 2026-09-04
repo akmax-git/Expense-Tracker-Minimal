@@ -26,14 +26,14 @@ export function CategoryGrid({ categories, selected, onSelect }: Props) {
           <Pressable
             key={cat.name}
             onPress={() => onSelect(cat.name)}
-            style={({ pressed }) => [
+            style={({ pressed, hovered }) => [
               styles.item,
               {
                 backgroundColor: isSelected
                   ? cat.color + "33"
                   : colors.card,
                 borderColor: isSelected ? cat.color : colors.border,
-                opacity: pressed ? 0.75 : 1,
+                opacity: pressed ? 0.75 : hovered ? 0.9 : 1,
               },
             ]}
           >
@@ -83,7 +83,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 8,
     borderRadius: 14,
-    borderWidth: 1.5,
+    borderWidth: 1,
     gap: 6,
   },
   iconWrap: {

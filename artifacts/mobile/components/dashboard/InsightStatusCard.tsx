@@ -27,9 +27,9 @@ function statusMeta(
     case "at_risk":
       return {
         icon: "warning-outline" as const,
-        color: "#FF9F43",
-        bg: "#FF9F4315",
-        border: "#FF9F4330",
+        color: colors.warning,
+        bg: colors.warning + "15",
+        border: colors.warning + "30",
       };
     case "none":
       return {
@@ -80,8 +80,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 10,
-    padding: 14,
-    borderRadius: 14,
+    padding: 16,
+    borderRadius: 16,
     borderWidth: 1,
   },
   body: {

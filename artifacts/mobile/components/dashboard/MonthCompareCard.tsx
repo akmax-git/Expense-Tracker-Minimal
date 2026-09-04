@@ -42,7 +42,11 @@ export function MonthCompareCard({ compare }: Props) {
     <View
       style={[
         styles.card,
-        { backgroundColor: colors.card, borderColor: colors.border },
+        {
+          backgroundColor: colors.card,
+          borderColor: colors.border,
+          ...colors.shadow.card,
+        },
       ]}
     >
       <View style={styles.header}>
@@ -99,7 +103,7 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: 16,
     borderWidth: 1,
-    padding: 14,
+    padding: 16,
     gap: 10,
   },
   header: {

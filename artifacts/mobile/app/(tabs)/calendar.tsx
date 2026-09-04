@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ExpenseItem } from "@/components/ExpenseItem";
 import {
+  countsTowardSpend,
   currentMonth,
   dateToString,
   formatINR,
@@ -32,9 +33,14 @@ function monthOffset(base: string, off: number): string {
 export default function CalendarScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { canEdit } = useManager();
-  const { getMonthExpenses, getDayExpenses, getCategoryInfo, deleteExpense } =
-    useExpenses();
+  const { canEdit, canApprove } = useManager();
+  const {
+    getMonthExpenses,
+    getDayExpenses,
+    getCategoryInfo,
+    deleteExpense,
+    setExpenseStatus,
+  } = useExpenses();
 
   const [month, setMonth] = useState(currentMonth);
   const [selectedDate, setSelectedDate] = useState(dateToString(new Date()));
@@ -55,14 +61,16 @@ export default function CalendarScreen() {
 
   const dayTotals = useMemo(() => {
     const map: Record<string, number> = {};
-    monthExpenses.forEach((e) => {
+    monthExpenses.filter(countsTowardSpend).forEach((e) => {
       map[e.date] = (map[e.date] ?? 0) + e.amount;
     });
     return map;
   }, [monthExpenses]);
 
   const dayExpenses = getDayExpenses(selectedDate);
-  const dayTotal = dayExpenses.reduce((s, e) => s + e.amount, 0);
+  const dayTotal = dayExpenses
+    .filter(countsTowardSpend)
+    .reduce((s, e) => s + e.amount, 0);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
@@ -210,7 +218,7 @@ export default function CalendarScreen() {
 
           {dayExpenses.length === 0 ? (
             <View style={[styles.empty, { borderColor: colors.border }]}>
-              <Ionicons name="receipt-outline" size={32} color={colors.mutedForeground} />
+              <Ionicons name="receipt-outline" size={28} color={colors.mutedForeground} />
               <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
                 No expenses on this day
               </Text>
@@ -222,6 +230,17 @@ export default function CalendarScreen() {
                 expense={exp}
                 category={getCategoryInfo(exp.category)}
                 onDelete={canEdit ? deleteExpense : undefined}
+                canReview={canApprove}
+                onApprove={
+                  canApprove
+                    ? (id) => setExpenseStatus(id, "approved")
+                    : undefined
+                }
+                onReject={
+                  canApprove
+                    ? (id) => setExpenseStatus(id, "rejected")
+                    : undefined
+                }
                 compact
               />
             ))
@@ -314,5 +333,6 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
     fontFamily: "Inter_400Regular",
+    textAlign: "center",
   },
 });

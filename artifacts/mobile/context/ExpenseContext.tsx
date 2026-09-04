@@ -10,6 +10,9 @@ import React, {
 import { getMonthCashSurplus, getOpeningBalance } from "@/lib/cashFlow";
 import { supabase } from "@/lib/supabase";
 
+/** Approval workflow for manager review */
+export type ExpenseStatus = "pending" | "approved" | "rejected";
+
 export interface Expense {
   id: string;
   amount: number;
@@ -17,7 +20,36 @@ export interface Expense {
   note: string;
   date: string;
   billUrl?: string | null;
+  status: ExpenseStatus;
   createdAt: string;
+}
+
+export function normalizeExpenseStatus(value: unknown): ExpenseStatus {
+  if (value === "pending" || value === "approved" || value === "rejected") {
+    return value;
+  }
+  // Legacy rows / missing column → treat as approved so totals stay intact
+  return "approved";
+}
+
+/** Only approved expenses affect spend, budget remaining, and analytics. */
+export function countsTowardSpend(expense: {
+  status?: ExpenseStatus | string | null;
+}): boolean {
+  return normalizeExpenseStatus(expense.status) === "approved";
+}
+
+function mapExpenseRow(r: Record<string, unknown>): Expense {
+  return {
+    id: String(r.id),
+    amount: Number(r.amount),
+    category: String(r.category),
+    note: String(r.note ?? ""),
+    date: String(r.date),
+    billUrl: (r.bill_url as string | null) ?? null,
+    status: normalizeExpenseStatus(r.status),
+    createdAt: String(r.created_at),
+  };
 }
 
 export interface MonthBudget {
@@ -85,12 +117,21 @@ interface ExpenseContextValue {
   allCategories: CategoryInfo[];
   isLoading: boolean;
   syncError: string | null;
-  addExpense: (expense: Omit<Expense, "id" | "createdAt">) => Promise<void>;
+  addExpense: (
+    expense: Omit<Expense, "id" | "createdAt" | "status"> & {
+      status?: ExpenseStatus;
+    }
+  ) => Promise<void>;
   updateExpense: (
     id: string,
-    expense: Omit<Expense, "id" | "createdAt">
+    expense: Omit<Expense, "id" | "createdAt" | "status"> & {
+      status?: ExpenseStatus;
+    }
   ) => Promise<void>;
+  setExpenseStatus: (id: string, status: ExpenseStatus) => Promise<void>;
   deleteExpense: (id: string) => Promise<void>;
+  /** Pending expenses awaiting manager approval */
+  getPendingCount: (month?: string) => number;
   addIncome: (income: Omit<Income, "id" | "createdAt">) => Promise<void>;
   deleteIncome: (id: string) => Promise<void>;
   setMonthBudget: (month: string, amount: number) => Promise<void>;
@@ -155,17 +196,7 @@ export function ExpenseProvider({
 
         if (expError) throw expError;
 
-        setExpenses(
-          (expData ?? []).map((r: any) => ({
-            id: r.id,
-            amount: r.amount,
-            category: r.category,
-            note: r.note ?? "",
-            date: r.date,
-            billUrl: r.bill_url ?? null,
-            createdAt: r.created_at,
-          }))
-        );
+        setExpenses((expData ?? []).map((r: any) => mapExpenseRow(r)));
 
         const { data: budData, error: budError } = await supabase
           .from("budgets")
@@ -320,36 +351,15 @@ export function ExpenseProvider({
         },
         (payload) => {
           if (payload.eventType === "INSERT") {
-            const r = payload.new as any;
-            const newExp: Expense = {
-              id: r.id,
-              amount: Number(r.amount),
-              category: r.category,
-              note: r.note ?? "",
-              date: r.date,
-              billUrl: r.bill_url ?? null,
-              createdAt: r.created_at,
-            };
+            const newExp = mapExpenseRow(payload.new as any);
             setExpenses((prev) => {
               if (prev.find((e) => e.id === newExp.id)) return prev;
               return [newExp, ...prev];
             });
           } else if (payload.eventType === "UPDATE") {
-            const r = payload.new as any;
+            const updated = mapExpenseRow(payload.new as any);
             setExpenses((prev) =>
-              prev.map((e) =>
-                e.id === r.id
-                  ? {
-                      id: r.id,
-                      amount: Number(r.amount),
-                      category: r.category,
-                      note: r.note ?? "",
-                      date: r.date,
-                      billUrl: r.bill_url ?? null,
-                      createdAt: r.created_at,
-                    }
-                  : e
-              )
+              prev.map((e) => (e.id === updated.id ? updated : e))
             );
           } else if (payload.eventType === "DELETE") {
             setExpenses((prev) =>
@@ -419,10 +429,24 @@ export function ExpenseProvider({
   // ─── Expenses ─────────────────────────────────────────────────────────────
 
   const addExpense = useCallback(
-    async (expense: Omit<Expense, "id" | "createdAt">) => {
+    async (
+      expense: Omit<Expense, "id" | "createdAt" | "status"> & {
+        status?: ExpenseStatus;
+      }
+    ) => {
       const id = generateId();
       const createdAt = new Date().toISOString();
-      const newExpense: Expense = { ...expense, id, createdAt };
+      const status: ExpenseStatus = expense.status ?? "pending";
+      const newExpense: Expense = {
+        amount: expense.amount,
+        category: expense.category,
+        note: expense.note,
+        date: expense.date,
+        billUrl: expense.billUrl ?? null,
+        status,
+        id,
+        createdAt,
+      };
 
       setExpenses((prev) => [newExpense, ...prev]);
 
@@ -434,25 +458,56 @@ export function ExpenseProvider({
         note: expense.note,
         date: expense.date,
         bill_url: expense.billUrl ?? null,
+        status,
         created_at: createdAt,
       });
 
       if (error) {
         setExpenses((prev) => prev.filter((e) => e.id !== id));
-        setSyncError(error.message);
-        throw new Error(error.message);
+        const msg = String(error.message ?? "");
+        const missingCol =
+          msg.toLowerCase().includes("status") &&
+          (msg.toLowerCase().includes("column") ||
+            error.code === "PGRST204" ||
+            error.code === "42703");
+        setSyncError(
+          missingCol
+            ? "Run supabase-migration-expense-status.sql in Supabase to enable approvals."
+            : error.message
+        );
+        throw new Error(
+          missingCol
+            ? "Approval status column missing. Run the expense-status migration in Supabase."
+            : error.message
+        );
       }
     },
     [userId]
   );
 
   const updateExpense = useCallback(
-    async (id: string, expense: Omit<Expense, "id" | "createdAt">) => {
+    async (
+      id: string,
+      expense: Omit<Expense, "id" | "createdAt" | "status"> & {
+        status?: ExpenseStatus;
+      }
+    ) => {
       const previous = expenses;
       const existing = expenses.find((e) => e.id === id);
       if (!existing) {
         throw new Error("Expense not found");
       }
+
+      // Material edits send the expense back for review
+      const materialChange =
+        existing.amount !== expense.amount ||
+        existing.category !== expense.category ||
+        existing.date !== expense.date;
+      const nextStatus: ExpenseStatus =
+        expense.status ??
+        (materialChange && existing.status === "approved"
+          ? "pending"
+          : existing.status);
 
       const updated: Expense = {
         ...existing,
@@ -461,6 +516,7 @@ export function ExpenseProvider({
         note: expense.note,
         date: expense.date,
         billUrl: expense.billUrl ?? null,
+        status: nextStatus,
       };
 
       setExpenses((prev) => prev.map((e) => (e.id === id ? updated : e)));
@@ -473,6 +529,7 @@ export function ExpenseProvider({
           note: expense.note,
           date: expense.date,
           bill_url: expense.billUrl ?? null,
+          status: nextStatus,
         })
         .eq("id", id)
         .eq("user_id", userId)
@@ -488,6 +545,42 @@ export function ExpenseProvider({
       if (!data || data.length === 0) {
         setExpenses(previous);
         const msg = "Could not update expense. Please try again.";
+        setSyncError(msg);
+        throw new Error(msg);
+      }
+    },
+    [userId, expenses]
+  );
+
+  const setExpenseStatus = useCallback(
+    async (id: string, status: ExpenseStatus) => {
+      const previous = expenses;
+      const existing = expenses.find((e) => e.id === id);
+      if (!existing) {
+        throw new Error("Expense not found");
+      }
+      if (existing.status === status) return;
+
+      setExpenses((prev) =>
+        prev.map((e) => (e.id === id ? { ...e, status } : e))
+      );
+
+      const { data, error } = await supabase
+        .from("expenses")
+        .update({ status })
+        .eq("id", id)
+        .eq("user_id", userId)
+        .select("id");
+
+      if (error) {
+        setExpenses(previous);
+        setSyncError(error.message);
+        throw new Error(error.message);
+      }
+
+      if (!data || data.length === 0) {
+        setExpenses(previous);
+        const msg = "Could not update approval status. Please try again.";
         setSyncError(msg);
         throw new Error(msg);
       }
@@ -630,6 +723,16 @@ export function ExpenseProvider({
 
   const getDayExpenses = useCallback(
     (date: string) => expenses.filter((e) => e.date === date),
+    [expenses]
+  );
+
+  const getPendingCount = useCallback(
+    (month?: string) =>
+      expenses.filter(
+        (e) =>
+          e.status === "pending" &&
+          (!month || e.date.startsWith(month))
+      ).length,
     [expenses]
   );
 
@@ -788,6 +891,7 @@ export function ExpenseProvider({
         syncError,
         addExpense,
         updateExpense,
+        setExpenseStatus,
         deleteExpense,
         addIncome,
         deleteIncome,
@@ -799,6 +903,7 @@ export function ExpenseProvider({
         isIncomeDrivenBudget,
         getMonthExpenses,
         getDayExpenses,
+        getPendingCount,
         addQuickTemplate,
         removeQuickTemplate,
         addCustomCategory,

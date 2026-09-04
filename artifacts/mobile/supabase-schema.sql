@@ -53,8 +53,12 @@ create table public.expenses (
   note        text not null default '',
   date        text not null,
   bill_url    text,
+  status      text not null default 'pending'
+                check (status in ('pending', 'approved', 'rejected')),
   created_at  timestamptz not null default now()
 );
+
+create index expenses_user_status_idx on public.expenses (user_id, status);
 
 alter table public.expenses enable row level security;
 

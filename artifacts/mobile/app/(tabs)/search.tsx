@@ -13,8 +13,10 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ExpenseItem } from "@/components/ExpenseItem";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { FilterChip } from "@/components/ui/FilterChip";
 import {
-  currentMonth,
+  countsTowardSpend,
   formatMonth,
   useExpenses,
 } from "@/context/ExpenseContext";
@@ -36,9 +38,14 @@ function lastNMonths(n: number): string[] {
 export default function SearchScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { canEdit } = useManager();
-  const { expenses, allCategories, getCategoryInfo, deleteExpense } =
-    useExpenses();
+  const { canEdit, canApprove } = useManager();
+  const {
+    expenses,
+    allCategories,
+    getCategoryInfo,
+    deleteExpense,
+    setExpenseStatus,
+  } = useExpenses();
 
   const [query, setQuery] = useState("");
   const [filterMonth, setFilterMonth] = useState<string | null>(null);
@@ -111,7 +118,6 @@ export default function SearchScreen() {
               label="All months"
               active={filterMonth === null}
               onPress={() => setFilterMonth(null)}
-              colors={colors}
             />
             {months.map((m) => (
               <FilterChip
@@ -119,7 +125,6 @@ export default function SearchScreen() {
                 label={formatMonth(m).split(" ")[0]}
                 active={filterMonth === m}
                 onPress={() => setFilterMonth(filterMonth === m ? null : m)}
-                colors={colors}
               />
             ))}
           </ScrollView>
@@ -136,7 +141,6 @@ export default function SearchScreen() {
               label="All"
               active={filterCategory === null}
               onPress={() => setFilterCategory(null)}
-              colors={colors}
             />
             {allCategories.map((cat) => (
               <FilterChip
@@ -148,7 +152,6 @@ export default function SearchScreen() {
                     filterCategory === cat.name ? null : cat.name
                   )
                 }
-                colors={colors}
                 color={cat.color}
               />
             ))}
@@ -164,6 +167,7 @@ export default function SearchScreen() {
             {filtered.length > 0
               ? "₹" +
                 filtered
+                  .filter(countsTowardSpend)
                   .reduce((s, e) => s + e.amount, 0)
                   .toLocaleString("en-IN")
               : ""}
@@ -181,24 +185,36 @@ export default function SearchScreen() {
           showsVerticalScrollIndicator={false}
           scrollEnabled={!!filtered.length}
           ListEmptyComponent={
-            <View style={styles.empty}>
-              <Ionicons
-                name="search-outline"
-                size={40}
-                color={colors.mutedForeground}
-              />
-              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-                {expenses.length === 0
+            <EmptyState
+              icon="search-outline"
+              title={
+                expenses.length === 0
                   ? "No expenses yet"
-                  : "No expenses match your filters"}
-              </Text>
-            </View>
+                  : "No expenses match your filters"
+              }
+              subtitle={
+                expenses.length === 0
+                  ? "Add an expense to see it here"
+                  : "Try a different search or filter"
+              }
+            />
           }
           renderItem={({ item }) => (
             <ExpenseItem
               expense={item}
               category={getCategoryInfo(item.category)}
               onDelete={canEdit ? deleteExpense : undefined}
+              canReview={canApprove}
+              onApprove={
+                canApprove
+                  ? (id) => setExpenseStatus(id, "approved")
+                  : undefined
+              }
+              onReject={
+                canApprove
+                  ? (id) => setExpenseStatus(id, "rejected")
+                  : undefined
+              }
             />
           )}
         />
@@ -206,59 +222,6 @@ export default function SearchScreen() {
     </View>
   );
 }
-
-function FilterChip({
-  label,
-  active,
-  onPress,
-  colors,
-  color,
-}: {
-  label: string;
-  active: boolean;
-  onPress: () => void;
-  colors: ReturnType<typeof useColors>;
-  color?: string;
-}) {
-  const activeColor = color ?? colors.primary;
-  return (
-    <Pressable
-      onPress={onPress}
-      style={[
-        chipStyles.chip,
-        {
-          backgroundColor: active ? activeColor + "22" : colors.card,
-          borderColor: active ? activeColor : colors.border,
-        },
-      ]}
-    >
-      <Text
-        style={[
-          chipStyles.text,
-          {
-            color: active ? activeColor : colors.mutedForeground,
-            fontFamily: active ? "Inter_600SemiBold" : "Inter_400Regular",
-          },
-        ]}
-      >
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-const chipStyles = StyleSheet.create({
-  chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-    marginRight: 6,
-  },
-  text: {
-    fontSize: 12,
-  },
-});
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
@@ -308,14 +271,5 @@ const styles = StyleSheet.create({
   list: {
     paddingHorizontal: 16,
     paddingTop: 12,
-  },
-  empty: {
-    alignItems: "center",
-    gap: 12,
-    paddingTop: 60,
-  },
-  emptyText: {
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
   },
 });

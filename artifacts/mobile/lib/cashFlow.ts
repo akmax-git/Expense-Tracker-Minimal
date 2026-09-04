@@ -6,7 +6,17 @@ export function monthOffset(base: string, offset: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-export type DatedAmount = { date: string; amount: number };
+export type DatedAmount = {
+  date: string;
+  amount: number;
+  /** When present, only approved expenses count toward spend */
+  status?: string | null;
+};
+
+function countsAsSpend(row: DatedAmount): boolean {
+  // Missing status (legacy) counts as approved
+  return !row.status || row.status === "approved";
+}
 
 /** YYYY-MM from a YYYY-MM-DD (or YYYY-MM) string. */
 export function monthKeyFromDate(date: string): string {
@@ -17,6 +27,7 @@ export function monthKeyFromDate(date: string): string {
  * Opening Cash Balance for `month` = leftover from all prior months
  * (each month: balance = max(0, balance + surplusIn − spent)).
  * Carries July's remaining Cash Balance into August, etc.
+ * Only approved expenses reduce the balance.
  */
 export function getOpeningBalance(
   month: string,
@@ -42,7 +53,7 @@ export function getOpeningBalance(
       .filter((row) => row.date.startsWith(m))
       .reduce((s, row) => s + row.amount, 0);
     const spent = expenses
-      .filter((row) => row.date.startsWith(m))
+      .filter((row) => row.date.startsWith(m) && countsAsSpend(row))
       .reduce((s, row) => s + row.amount, 0);
     balance = Math.max(0, balance + surplusIn - spent);
     m = monthOffset(m, 1);

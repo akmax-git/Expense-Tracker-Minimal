@@ -1309,23 +1309,24 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingBottom: 12,
+    paddingBottom: 14,
     paddingHorizontal: 20,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: 1,
   },
   headerTitle: {
     fontSize: 17,
     fontFamily: "Inter_600SemiBold",
+    letterSpacing: -0.2,
   },
   closeBtn: {
     position: "absolute",
     right: 20,
-    bottom: 12,
+    bottom: 14,
   },
   content: {
     paddingHorizontal: 20,
     paddingTop: 24,
-    gap: 8,
+    gap: 10,
   },
   sectionHeader: {
     fontSize: 11,
@@ -1339,8 +1340,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     padding: 16,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 16,
+    borderWidth: 1,
     gap: 12,
   },
   avatar: {
@@ -1362,7 +1363,7 @@ const styles = StyleSheet.create({
   budgetCard: {
     padding: 16,
     borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
     gap: 10,
   },
   budgetLabel: {
@@ -1432,7 +1433,7 @@ const styles = StyleSheet.create({
   managerCard: {
     padding: 16,
     borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
     gap: 6,
   },
   managerCardHeader: {
@@ -1650,7 +1651,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 14,
     borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
     gap: 10,
   },
   rowIcon: { marginRight: 2 },

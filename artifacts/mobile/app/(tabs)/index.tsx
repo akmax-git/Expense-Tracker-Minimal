@@ -44,18 +44,20 @@ export default function DashboardScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
-  const { viewingAsEmail, isManagerMode, canEdit, activeGrant } = useManager();
+  const { viewingAsEmail, isManagerMode, canEdit, canApprove, activeGrant } = useManager();
   const {
     getMonthExpenses,
     getMonthBudget,
     getMonthOpeningBalance,
     getMonthIncomeTotal,
     getMonthIncomes,
+    getPendingCount,
     quickTemplates,
     getCategoryInfo,
     addExpense,
     deleteExpense,
     deleteIncome,
+    setExpenseStatus,
   } = useExpenses();
 
   const [month, setMonth] = useState(currentMonth);
@@ -101,7 +103,18 @@ export default function DashboardScreen() {
 
   const topCategory = topCategories[0];
   const recentExpenses = monthExpenses.slice(0, 8);
+  const pendingCount = getPendingCount(month);
   const chartWidth = Math.min(windowWidth - 64, 360);
+
+  const handleApprove = async (id: string) => {
+    if (!canApprove) return;
+    await setExpenseStatus(id, "approved");
+  };
+
+  const handleReject = async (id: string) => {
+    if (!canApprove) return;
+    await setExpenseStatus(id, "rejected");
+  };
 
   const handleDeleteIncome = async (id: string, label: string) => {
     const ok = await confirmDestructive(
@@ -201,6 +214,32 @@ export default function DashboardScreen() {
         </View>
       )}
 
+      {pendingCount > 0 && (
+        <Pressable
+          onPress={() => router.push("/(tabs)/records")}
+          style={[
+            styles.pendingBanner,
+            {
+              backgroundColor: colors.warningMuted,
+              borderColor: colors.warning + "55",
+            },
+          ]}
+        >
+          <View style={[styles.pendingDot, { backgroundColor: colors.warning }]} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.pendingTitle, { color: colors.warningForeground }]}>
+              {pendingCount} expense{pendingCount === 1 ? "" : "s"} awaiting approval
+            </Text>
+            <Text style={[styles.pendingSub, { color: colors.mutedForeground }]}>
+              {canApprove
+                ? "Approve or reject to update spend totals"
+                : "Only Full access can approve — pending items are not in spend yet"}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={colors.warningForeground} />
+        </Pressable>
+      )}
+
       <ScrollView
         contentContainerStyle={[
           styles.content,
@@ -212,7 +251,11 @@ export default function DashboardScreen() {
         <View
           style={[
             styles.budgetCard,
-            { backgroundColor: colors.card, borderColor: colors.border },
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+              ...colors.shadow.card,
+            },
           ]}
         >
           <View style={styles.ringRow}>
@@ -231,6 +274,14 @@ export default function DashboardScreen() {
                 color={colors.accent}
                 colors={colors}
               />
+              {pendingCount > 0 ? (
+                <StatPill
+                  label="Pending"
+                  value={String(pendingCount)}
+                  color={colors.warning}
+                  colors={colors}
+                />
+              ) : null}
             </View>
           </View>
         </View>
@@ -492,6 +543,9 @@ export default function DashboardScreen() {
               expense={exp}
               category={getCategoryInfo(exp.category)}
               onDelete={canEdit ? deleteExpense : undefined}
+              canReview={canApprove}
+              onApprove={canApprove ? handleApprove : undefined}
+              onReject={canApprove ? handleReject : undefined}
             />
           ))}
           {monthExpenses.length > 8 && (
@@ -544,7 +598,7 @@ const statStyles = StyleSheet.create({
     gap: 1,
   },
   label: {
-    fontSize: 9,
+    fontSize: 11,
     fontFamily: "Inter_500Medium",
     textTransform: "uppercase",
     letterSpacing: 0.3,
@@ -564,7 +618,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 20,
-    paddingBottom: 12,
+    paddingBottom: 14,
     borderBottomWidth: 1,
   },
   headerCenter: {
@@ -599,8 +653,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    padding: 14,
-    borderRadius: 14,
+    padding: 16,
+    borderRadius: 16,
     borderWidth: 1,
   },
   startTitle: {
@@ -760,5 +814,30 @@ const styles = StyleSheet.create({
   managerBannerText: {
     fontSize: 13,
     fontFamily: "Inter_500Medium",
+  },
+  pendingBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginHorizontal: 16,
+    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  pendingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  pendingTitle: {
+    fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
+  },
+  pendingSub: {
+    fontSize: 11,
+    fontFamily: "Inter_400Regular",
+    marginTop: 1,
   },
 });

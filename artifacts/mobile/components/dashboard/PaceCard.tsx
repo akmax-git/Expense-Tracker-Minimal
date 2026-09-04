@@ -21,7 +21,11 @@ export function PaceCard({ pace }: Props) {
     <View
       style={[
         styles.card,
-        { backgroundColor: colors.card, borderColor: colors.border },
+        {
+          backgroundColor: colors.card,
+          borderColor: colors.border,
+          ...colors.shadow.card,
+        },
       ]}
     >
       <Text style={[styles.label, { color: colors.mutedForeground }]}>
@@ -97,7 +101,7 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: 16,
     borderWidth: 1,
-    padding: 14,
+    padding: 16,
     gap: 12,
   },
   label: {

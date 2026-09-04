@@ -29,12 +29,12 @@ export const MANAGER_PERMISSIONS: {
   {
     value: "edit",
     label: "View & Edit",
-    description: "Add, edit, and delete expenses on your behalf",
+    description: "Add, edit, and delete expenses — cannot approve or reject",
   },
   {
     value: "full",
     label: "Full access",
-    description: "Edit expenses plus change monthly budget",
+    description: "Edit expenses, change budget, and approve or reject expenses",
   },
 ];
 
@@ -77,6 +77,8 @@ interface ManagerContextValue {
   canEdit: boolean;
   /** Can change monthly budget for the viewed account */
   canManageBudget: boolean;
+  /** Can approve / reject expenses (owner or Full access managers only) */
+  canApprove: boolean;
   isLoadingGrants: boolean;
   setViewingAs: (ownerUserId: string | null, ownerEmail: string | null) => void;
   grantAccess: (
@@ -393,6 +395,8 @@ export function ManagerProvider({ children }: { children: React.ReactNode }) {
     activeGrant?.permission === "edit" ||
     activeGrant?.permission === "full";
   const canManageBudget = !isManagerMode || activeGrant?.permission === "full";
+  /** High-level: only account owner or Full access managers */
+  const canApprove = !isManagerMode || activeGrant?.permission === "full";
 
   return (
     <ManagerContext.Provider
@@ -405,6 +409,7 @@ export function ManagerProvider({ children }: { children: React.ReactNode }) {
         isManagerMode,
         canEdit,
         canManageBudget,
+        canApprove,
         isLoadingGrants,
         setViewingAs,
         grantAccess,

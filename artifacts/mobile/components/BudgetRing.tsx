@@ -23,7 +23,7 @@ export function BudgetRing({ spent, budget, size = 180 }: Props) {
   const ringColor = isOver
     ? colors.destructive
     : isWarning
-    ? "#FF9F43"
+    ? colors.warning
     : colors.primary;
   const remaining = budget - spent;
 

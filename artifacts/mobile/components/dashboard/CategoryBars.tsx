@@ -44,7 +44,11 @@ export function CategoryBars({
         <View
           style={[
             styles.empty,
-            { backgroundColor: colors.card, borderColor: colors.border },
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+              ...colors.shadow.card,
+            },
           ]}
         >
           <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
@@ -61,7 +65,11 @@ export function CategoryBars({
               key={slice.label}
               style={[
                 styles.row,
-                { backgroundColor: colors.card, borderColor: colors.border },
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                  ...colors.shadow.card,
+                },
               ]}
             >
               <View style={[styles.iconWrap, { backgroundColor: color + "22" }]}>
@@ -146,7 +154,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    padding: 12,
+    padding: 16,
     borderRadius: 12,
     borderWidth: 1,
   },

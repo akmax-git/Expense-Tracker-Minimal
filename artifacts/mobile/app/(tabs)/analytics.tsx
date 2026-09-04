@@ -122,14 +122,14 @@ export default function AnalyticsScreen() {
             label="Avg/Day"
             value={formatINR(Math.round(avgDaily))}
             icon="trending-up-outline"
-            color="#FF9F43"
+            color={colors.warning}
             colors={colors}
           />
           <StatCard
             label="Top Category"
             value={topCategory?.label ?? "—"}
             icon="star-outline"
-            color="#FD79A8"
+            color={colors.primary}
             colors={colors}
           />
         </View>
@@ -174,7 +174,7 @@ export default function AnalyticsScreen() {
               <PieChart data={pieData} size={200} total={totalSpent} />
             ) : (
               <View style={styles.empty}>
-                <Ionicons name="pie-chart-outline" size={40} color={colors.mutedForeground} />
+                <Ionicons name="pie-chart-outline" size={36} color={colors.mutedForeground} />
                 <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
                   No expenses in this period
                 </Text>
@@ -470,5 +470,6 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
     fontFamily: "Inter_400Regular",
+    textAlign: "center",
   },
 });

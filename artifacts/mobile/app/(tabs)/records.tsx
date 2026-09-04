@@ -1,6 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { LinearGradient } from "expo-linear-gradient";
 import * as WebBrowser from "expo-web-browser";
 import React, { useMemo, useState } from "react";
 import {
@@ -22,6 +21,8 @@ import { CategoryGrid } from "@/components/CategoryGrid";
 import { useAuth } from "@/context/AuthContext";
 import {
   Expense,
+  ExpenseStatus,
+  countsTowardSpend,
   currentMonth,
   dateToString,
   formatINR,
@@ -34,11 +35,13 @@ import { confirmDestructive } from "@/lib/confirm";
 import { billDisplayName, isImageBill, pickBillFile } from "@/lib/pickBill";
 import { uploadBill } from "@/lib/uploadBill";
 import { exportExpensesToExcel } from "@/utils/exportExpenses";
-
-const GREEN = "#00C853";
-const BLUE = "#1565C0";
+import { StatusBadge } from "@/components/ExpenseItem";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { FilterChip } from "@/components/ui/FilterChip";
+import { PrimaryButton } from "@/components/ui/PrimaryButton";
 
 type BillFilter = "all" | "with_bill" | "no_bill";
+type StatusFilter = "all" | ExpenseStatus;
 
 function todayStr() {
   return dateToString(new Date());
@@ -81,14 +84,15 @@ export default function RecordsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { viewingAs, canEdit } = useManager();
-  const { expenses, allCategories, deleteExpense, updateExpense, getCategoryInfo } =
+  const { viewingAs, canEdit, canApprove } = useManager();
+  const { expenses, allCategories, deleteExpense, updateExpense, setExpenseStatus, getCategoryInfo } =
     useExpenses();
 
   const [search, setSearch] = useState("");
   const [filterMonth, setFilterMonth] = useState<string | null>(currentMonth());
   const [filterCategory, setFilterCategory] = useState<string | null>(null);
   const [filterBill, setFilterBill] = useState<BillFilter>("all");
+  const [filterStatus, setFilterStatus] = useState<StatusFilter>("all");
   const [editTarget, setEditTarget] = useState<Expense | null>(null);
   const [showEdit, setShowEdit] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -122,6 +126,7 @@ export default function RecordsScreen() {
     filterMonth !== null ||
     filterCategory !== null ||
     filterBill !== "all" ||
+    filterStatus !== "all" ||
     search.trim().length > 0;
 
   const clearFilters = () => {
@@ -129,9 +134,10 @@ export default function RecordsScreen() {
     setFilterMonth(null);
     setFilterCategory(null);
     setFilterBill("all");
+    setFilterStatus("all");
   };
 
-  // Filter expenses by search + month + category + bill
+  // Filter expenses by search + month + category + bill + status
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
     return expenses.filter((e) => {
@@ -139,20 +145,28 @@ export default function RecordsScreen() {
       if (filterCategory && e.category !== filterCategory) return false;
       if (filterBill === "with_bill" && !e.billUrl) return false;
       if (filterBill === "no_bill" && e.billUrl) return false;
+      if (filterStatus !== "all" && (e.status ?? "approved") !== filterStatus) {
+        return false;
+      }
       if (
         q &&
         !e.category.toLowerCase().includes(q) &&
         !e.note.toLowerCase().includes(q) &&
-        !String(e.amount).includes(q)
+        !String(e.amount).includes(q) &&
+        !(e.status ?? "").toLowerCase().includes(q)
       ) {
         return false;
       }
       return true;
     });
-  }, [expenses, search, filterMonth, filterCategory, filterBill]);
+  }, [expenses, search, filterMonth, filterCategory, filterBill, filterStatus]);
 
+  // Totals only count approved expenses
   const filteredTotal = useMemo(
-    () => filtered.reduce((s, e) => s + e.amount, 0),
+    () =>
+      filtered
+        .filter(countsTowardSpend)
+        .reduce((s, e) => s + e.amount, 0),
     [filtered]
   );
 
@@ -276,6 +290,45 @@ export default function RecordsScreen() {
     }
   }
 
+  async function handleApprove(expense: Expense) {
+    if (!canApprove) {
+      Alert.alert(
+        "Full access required",
+        "Only Full access managers can approve expenses."
+      );
+      return;
+    }
+    try {
+      await setExpenseStatus(expense.id, "approved");
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (err: any) {
+      Alert.alert("Could not approve", err?.message ?? "Please try again.");
+    }
+  }
+
+  async function handleReject(expense: Expense) {
+    if (!canApprove) {
+      Alert.alert(
+        "Full access required",
+        "Only Full access managers can reject expenses."
+      );
+      return;
+    }
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const ok = await confirmDestructive(
+      "Reject expense?",
+      `${expense.category} — ${formatINR(expense.amount)}\n\nRejected expenses won't count toward spend totals.`,
+      "Reject"
+    );
+    if (!ok) return;
+    try {
+      await setExpenseStatus(expense.id, "rejected");
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    } catch (err: any) {
+      Alert.alert("Could not reject", err?.message ?? "Please try again.");
+    }
+  }
+
   async function handleExport() {
     if (exporting) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -289,7 +342,10 @@ export default function RecordsScreen() {
     }
   }
 
-  const totalAll = expenses.reduce((s, e) => s + e.amount, 0);
+  const totalAll = expenses
+    .filter(countsTowardSpend)
+    .reduce((s, e) => s + e.amount, 0);
+  const pendingCount = expenses.filter((e) => e.status === "pending").length;
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -359,7 +415,6 @@ export default function RecordsScreen() {
             label="All months"
             active={filterMonth === null}
             onPress={() => setFilterMonth(null)}
-            colors={colors}
           />
           {availableMonths.map((m) => (
             <FilterChip
@@ -367,7 +422,6 @@ export default function RecordsScreen() {
               label={monthChipLabel(m)}
               active={filterMonth === m}
               onPress={() => setFilterMonth(filterMonth === m ? null : m)}
-              colors={colors}
             />
           ))}
         </ScrollView>
@@ -382,7 +436,6 @@ export default function RecordsScreen() {
             label="All categories"
             active={filterCategory === null}
             onPress={() => setFilterCategory(null)}
-            colors={colors}
           />
           {allCategories.map((cat) => (
             <FilterChip
@@ -392,13 +445,12 @@ export default function RecordsScreen() {
               onPress={() =>
                 setFilterCategory(filterCategory === cat.name ? null : cat.name)
               }
-              colors={colors}
               color={cat.color}
             />
           ))}
         </ScrollView>
 
-        {/* Bill + clear */}
+        {/* Bill + status + clear */}
         <View style={styles.filterFooter}>
           <ScrollView
             horizontal
@@ -409,7 +461,6 @@ export default function RecordsScreen() {
               label="All bills"
               active={filterBill === "all"}
               onPress={() => setFilterBill("all")}
-              colors={colors}
             />
             <FilterChip
               label="With bill"
@@ -417,7 +468,6 @@ export default function RecordsScreen() {
               onPress={() =>
                 setFilterBill(filterBill === "with_bill" ? "all" : "with_bill")
               }
-              colors={colors}
             />
             <FilterChip
               label="No bill"
@@ -425,7 +475,6 @@ export default function RecordsScreen() {
               onPress={() =>
                 setFilterBill(filterBill === "no_bill" ? "all" : "no_bill")
               }
-              colors={colors}
             />
           </ScrollView>
           {hasActiveFilters && (
@@ -445,10 +494,49 @@ export default function RecordsScreen() {
           )}
         </View>
 
+        {/* Approval status filter */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chips}
+        >
+          <FilterChip
+            label="All status"
+            active={filterStatus === "all"}
+            onPress={() => setFilterStatus("all")}
+          />
+          <FilterChip
+            label={pendingCount > 0 ? `Pending (${pendingCount})` : "Pending"}
+            active={filterStatus === "pending"}
+            onPress={() =>
+              setFilterStatus(filterStatus === "pending" ? "all" : "pending")
+            }
+            color={colors.warning}
+          />
+          <FilterChip
+            label="Approved"
+            active={filterStatus === "approved"}
+            onPress={() =>
+              setFilterStatus(filterStatus === "approved" ? "all" : "approved")
+            }
+            color={colors.success}
+          />
+          <FilterChip
+            label="Rejected"
+            active={filterStatus === "rejected"}
+            onPress={() =>
+              setFilterStatus(filterStatus === "rejected" ? "all" : "rejected")
+            }
+            color={colors.destructive}
+          />
+        </ScrollView>
+
         <Text style={[styles.resultMeta, { color: colors.mutedForeground }]}>
           {filtered.length} record{filtered.length !== 1 ? "s" : ""}
           {filterMonth ? ` · ${formatMonth(filterMonth)}` : ""}
           {filterCategory ? ` · ${filterCategory}` : ""}
+          {" · "}
+          {formatINR(hasActiveFilters ? filteredTotal : totalAll)} approved
         </Text>
       </View>
 
@@ -461,25 +549,17 @@ export default function RecordsScreen() {
         showsVerticalScrollIndicator={false}
       >
         {grouped.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={{ fontSize: 48 }}>🧾</Text>
-            <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-              {hasActiveFilters ? "No matching records" : "No expenses yet"}
-            </Text>
-            <Text style={[styles.emptySubtitle, { color: colors.mutedForeground }]}>
-              {hasActiveFilters
+          <EmptyState
+            icon={hasActiveFilters ? "search-outline" : "receipt-outline"}
+            title={hasActiveFilters ? "No matching records" : "No expenses yet"}
+            subtitle={
+              hasActiveFilters
                 ? "Try another month, category, or clear filters"
-                : "Tap + Add to record your first expense"}
-            </Text>
-            {hasActiveFilters && (
-              <Pressable
-                onPress={clearFilters}
-                style={[styles.emptyClear, { backgroundColor: colors.primary }]}
-              >
-                <Text style={styles.emptyClearText}>Clear filters</Text>
-              </Pressable>
-            )}
-          </View>
+                : "Tap + Add to record your first expense"
+            }
+            actionLabel={hasActiveFilters ? "Clear filters" : undefined}
+            onAction={hasActiveFilters ? clearFilters : undefined}
+          />
         ) : (
           grouped.map(([date, items]) => (
             <View key={date} style={styles.group}>
@@ -490,7 +570,11 @@ export default function RecordsScreen() {
                 </Text>
                 <View style={[styles.dateLine, { backgroundColor: colors.border }]} />
                 <Text style={[styles.dateTotalText, { color: colors.mutedForeground }]}>
-                  {formatINR(items.reduce((s, e) => s + e.amount, 0))}
+                  {formatINR(
+                    items
+                      .filter(countsTowardSpend)
+                      .reduce((s, e) => s + e.amount, 0)
+                  )}
                 </Text>
               </View>
 
@@ -504,11 +588,13 @@ export default function RecordsScreen() {
                     expense={expense}
                     catColor={catColor}
                     catInfo={catInfo}
-                    colors={colors}
                     dateLabel={formatDateFull(expense.date)}
                     canEdit={canEdit}
+                    canApprove={canApprove}
                     onEdit={() => openEdit(expense)}
                     onDelete={() => handleDelete(expense)}
+                    onApprove={() => handleApprove(expense)}
+                    onReject={() => handleReject(expense)}
                   />
                 );
               })}
@@ -536,7 +622,7 @@ export default function RecordsScreen() {
               Edit Expense
             </Text>
             <Pressable onPress={handleSaveEdit} disabled={editSaving} hitSlop={8}>
-              <Text style={[styles.modalSave, { color: GREEN, opacity: editSaving ? 0.5 : 1 }]}>
+              <Text style={[styles.modalSave, { color: colors.success, opacity: editSaving ? 0.5 : 1 }]}>
                 {editSaving ? "Saving…" : "Save"}
               </Text>
             </Pressable>
@@ -578,8 +664,8 @@ export default function RecordsScreen() {
                     style={[
                       styles.dateChip,
                       {
-                        backgroundColor: editDate === opt.value ? BLUE : colors.card,
-                        borderColor: editDate === opt.value ? BLUE : colors.border,
+                        backgroundColor: editDate === opt.value ? colors.primary : colors.card,
+                        borderColor: editDate === opt.value ? colors.primary : colors.border,
                       },
                     ]}
                   >
@@ -679,10 +765,10 @@ export default function RecordsScreen() {
                     </Pressable>
                     <Pressable
                       onPress={clearEditBill}
-                      style={[styles.billActionBtn, { backgroundColor: "#FF475722" }]}
-                    >
-                      <Ionicons name="trash-outline" size={16} color="#FF4757" />
-                      <Text style={[styles.billActionText, { color: "#FF4757" }]}>
+                    style={[styles.billActionBtn, { backgroundColor: colors.destructive + "22" }]}
+                  >
+                      <Ionicons name="trash-outline" size={16} color={colors.destructive} />
+                      <Text style={[styles.billActionText, { color: colors.destructive }]}>
                         Remove
                       </Text>
                     </Pressable>
@@ -728,23 +814,12 @@ export default function RecordsScreen() {
             </View>
 
             {/* Save button */}
-            <Pressable
+            <PrimaryButton
+              label={editSaving ? "Saving…" : "Save Changes"}
               onPress={handleSaveEdit}
+              loading={editSaving}
               disabled={editSaving}
-              style={({ pressed }) => [{ opacity: pressed || editSaving ? 0.8 : 1 }]}
-            >
-              <LinearGradient
-                colors={[GREEN, "#00A844", "#0D47A1"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.saveBtn}
-              >
-                <Ionicons name="checkmark" size={20} color="#fff" />
-                <Text style={styles.saveBtnText}>
-                  {editSaving ? "Saving…" : "Save Changes"}
-                </Text>
-              </LinearGradient>
-            </Pressable>
+            />
           </ScrollView>
         </View>
       </Modal>
@@ -752,82 +827,56 @@ export default function RecordsScreen() {
   );
 }
 
-function FilterChip({
-  label,
-  active,
-  onPress,
-  colors,
-  color,
-}: {
-  label: string;
-  active: boolean;
-  onPress: () => void;
-  colors: ReturnType<typeof useColors>;
-  color?: string;
-}) {
-  const activeColor = color ?? colors.primary;
-  return (
-    <Pressable
-      onPress={onPress}
-      style={[
-        chipStyles.chip,
-        {
-          backgroundColor: active ? activeColor + "22" : colors.card,
-          borderColor: active ? activeColor : colors.border,
-        },
-      ]}
-    >
-      <Text
-        style={[
-          chipStyles.text,
-          {
-            color: active ? activeColor : colors.mutedForeground,
-            fontFamily: active ? "Inter_600SemiBold" : "Inter_400Regular",
-          },
-        ]}
-      >
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-const chipStyles = StyleSheet.create({
-  chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-    marginRight: 6,
-  },
-  text: {
-    fontSize: 12,
-  },
-});
-
 function ReceiptCard({
   expense,
   catColor,
   catInfo,
-  colors,
   dateLabel,
   canEdit,
+  canApprove,
   onEdit,
   onDelete,
+  onApprove,
+  onReject,
 }: {
   expense: Expense;
   catColor: string;
   catInfo: any;
-  colors: any;
   dateLabel: string;
   canEdit: boolean;
+  canApprove: boolean;
   onEdit: () => void;
   onDelete: () => void;
+  onApprove: () => void;
+  onReject: () => void;
 }) {
+  const colors = useColors();
+  const status = expense.status ?? "approved";
+  const stripeColor =
+    status === "pending"
+      ? colors.warning
+      : status === "rejected"
+        ? colors.destructive
+        : catColor;
+
   return (
-    <View style={[styles.receiptCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+    <View
+      style={[
+        styles.receiptCard,
+        {
+          backgroundColor: colors.card,
+          borderColor:
+            status === "pending"
+              ? colors.warning + "55"
+              : status === "rejected"
+                ? colors.destructive + "40"
+                : colors.border,
+          opacity: status === "rejected" ? 0.82 : 1,
+        },
+      ]}
+    >
       {/* Left color stripe */}
-      <View style={[styles.receiptStripe, { backgroundColor: catColor }]} />
+      <View style={[styles.receiptStripe, { backgroundColor: stripeColor }]} />
 
       {/* Content */}
       <View style={styles.receiptBody}>
@@ -839,11 +888,26 @@ function ReceiptCard({
                 <Ionicons name={catInfo.icon as any} size={18} color={catColor} />
               </View>
             )}
-            <Text style={[styles.receiptCategory, { color: colors.foreground }]}>
-              {expense.category}
-            </Text>
+            <View style={{ gap: 4 }}>
+              <Text style={[styles.receiptCategory, { color: colors.foreground }]}>
+                {expense.category}
+              </Text>
+              <StatusBadge status={status} size="sm" />
+            </View>
           </View>
-          <Text style={[styles.receiptAmount, { color: catColor }]}>
+          <Text
+            style={[
+              styles.receiptAmount,
+              {
+                color:
+                  status === "rejected" || status === "pending"
+                    ? colors.mutedForeground
+                    : catColor,
+                textDecorationLine:
+                  status === "rejected" ? "line-through" : "none",
+              },
+            ]}
+          >
             {formatINR(expense.amount)}
           </Text>
         </View>
@@ -878,22 +942,70 @@ function ReceiptCard({
           <Text style={[styles.receiptId, { color: colors.mutedForeground }]}>
             #{expense.id.slice(-6).toUpperCase()}
           </Text>
-          {canEdit ? (
+          {canEdit || canApprove ? (
             <View style={styles.receiptBtns}>
-              <Pressable
-                onPress={onEdit}
-                style={[styles.receiptBtn, { backgroundColor: "#1565C022" }]}
-              >
-                <Ionicons name="pencil-outline" size={14} color={BLUE} />
-                <Text style={[styles.receiptBtnText, { color: BLUE }]}>Edit</Text>
-              </Pressable>
-              <Pressable
-                onPress={onDelete}
-                style={[styles.receiptBtn, { backgroundColor: "#FF475722" }]}
-              >
-                <Ionicons name="trash-outline" size={14} color="#FF4757" />
-                <Text style={[styles.receiptBtnText, { color: "#FF4757" }]}>Delete</Text>
-              </Pressable>
+              {canApprove && status === "pending" ? (
+                <>
+                  <Pressable
+                    onPress={onApprove}
+                    style={[styles.receiptBtn, { backgroundColor: colors.success + "22" }]}
+                  >
+                    <Ionicons name="checkmark" size={14} color={colors.success} />
+                    <Text style={[styles.receiptBtnText, { color: colors.success }]}>
+                      Approve
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={onReject}
+                    style={[styles.receiptBtn, { backgroundColor: colors.destructive + "22" }]}
+                  >
+                    <Ionicons name="close" size={14} color={colors.destructive} />
+                    <Text style={[styles.receiptBtnText, { color: colors.destructive }]}>
+                      Reject
+                    </Text>
+                  </Pressable>
+                </>
+              ) : null}
+              {canApprove && status === "rejected" ? (
+                <Pressable
+                  onPress={onApprove}
+                  style={[styles.receiptBtn, { backgroundColor: colors.success + "22" }]}
+                >
+                  <Ionicons name="refresh-outline" size={14} color={colors.success} />
+                  <Text style={[styles.receiptBtnText, { color: colors.success }]}>
+                    Re-approve
+                  </Text>
+                </Pressable>
+              ) : null}
+              {canApprove && status === "approved" ? (
+                <Pressable
+                  onPress={onReject}
+                  style={[styles.receiptBtn, { backgroundColor: colors.destructive + "22" }]}
+                >
+                  <Ionicons name="close" size={14} color={colors.destructive} />
+                  <Text style={[styles.receiptBtnText, { color: colors.destructive }]}>
+                    Reject
+                  </Text>
+                </Pressable>
+              ) : null}
+              {canEdit ? (
+                <>
+                  <Pressable
+                    onPress={onEdit}
+                    style={[styles.receiptBtn, { backgroundColor: colors.primary + "18" }]}
+                  >
+                    <Ionicons name="pencil-outline" size={14} color={colors.primary} />
+                    <Text style={[styles.receiptBtnText, { color: colors.primary }]}>Edit</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={onDelete}
+                    style={[styles.receiptBtn, { backgroundColor: colors.destructive + "22" }]}
+                  >
+                    <Ionicons name="trash-outline" size={14} color={colors.destructive} />
+                    <Text style={[styles.receiptBtnText, { color: colors.destructive }]}>Delete</Text>
+                  </Pressable>
+                </>
+              ) : null}
             </View>
           ) : (
             <Text style={[styles.receiptId, { color: colors.mutedForeground }]}>
@@ -920,8 +1032,9 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   title: {
-    fontSize: 24,
+    fontSize: 26,
     fontFamily: "Inter_700Bold",
+    letterSpacing: -0.3,
   },
   headerRight: {
     flexDirection: "row",
@@ -953,7 +1066,7 @@ const styles = StyleSheet.create({
   searchBox: {
     flexDirection: "row",
     alignItems: "center",
-    height: 42,
+    height: 44,
     borderRadius: 12,
     borderWidth: 1,
     paddingHorizontal: 12,
@@ -1049,14 +1162,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     overflow: "hidden",
+    marginBottom: 2,
   },
   receiptStripe: {
     width: 4,
   },
   receiptBody: {
     flex: 1,
-    padding: 14,
-    gap: 6,
+    padding: 16,
+    gap: 8,
   },
   receiptTopRow: {
     flexDirection: "row",
@@ -1127,7 +1241,10 @@ const styles = StyleSheet.create({
   },
   receiptBtns: {
     flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
     gap: 8,
+    flex: 1,
   },
   receiptBtn: {
     flexDirection: "row",

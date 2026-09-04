@@ -72,11 +72,18 @@ export function DatePickerModal({ visible, value, onSelect, onClose }: Props) {
       animationType="fade"
       onRequestClose={onClose}
     >
-      <Pressable style={styles.backdrop} onPress={onClose}>
+      <Pressable
+        style={[styles.backdrop, { backgroundColor: colors.overlay }]}
+        onPress={onClose}
+      >
         <Pressable
           style={[
             styles.sheet,
-            { backgroundColor: colors.card, borderColor: colors.border },
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+              ...colors.shadow.sheet,
+            },
           ]}
           onPress={(e) => e.stopPropagation()}
         >
@@ -167,7 +174,6 @@ export function DatePickerModal({ visible, value, onSelect, onClose }: Props) {
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
     justifyContent: "center",
     alignItems: "center",
     padding: 24,
@@ -177,8 +183,8 @@ const styles = StyleSheet.create({
     maxWidth: 360,
     borderRadius: 20,
     borderWidth: 1,
-    padding: 16,
-    gap: 12,
+    padding: 18,
+    gap: 14,
   },
   header: {
     flexDirection: "row",

@@ -3,7 +3,6 @@ import * as Haptics from "expo-haptics";
 import { router, useFocusEffect } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Image,
   Platform,
@@ -18,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { CategoryGrid } from "@/components/CategoryGrid";
 import { DatePickerModal } from "@/components/DatePickerModal";
+import { PrimaryButton } from "@/components/ui/PrimaryButton";
 import { useAuth } from "@/context/AuthContext";
 import {
   currentMonth,
@@ -143,6 +143,10 @@ export default function AddExpenseScreen() {
       setBillUri(null);
       setBillMime(null);
       setBillName(null);
+      Alert.alert(
+        "Expense submitted",
+        "Marked as Pending. It will count toward spend only after approval."
+      );
       router.push("/(tabs)/");
     } catch (err: any) {
       Alert.alert(
@@ -237,6 +241,28 @@ export default function AddExpenseScreen() {
             </Pressable>
           ))}
         </View>
+
+        {entryType === "expense" ? (
+          <View
+            style={[
+              styles.pendingHint,
+              {
+                backgroundColor: colors.warningMuted,
+                borderColor: colors.warning + "40",
+              },
+            ]}
+          >
+            <Ionicons
+              name="shield-checkmark-outline"
+              size={18}
+              color={colors.warningForeground}
+            />
+            <Text style={[styles.pendingHintText, { color: colors.warningForeground }]}>
+              New expenses start as Pending. They won't affect spend totals until
+              approved.
+            </Text>
+          </View>
+        ) : null}
 
         {/* Amount display */}
         <View
@@ -462,10 +488,10 @@ export default function AddExpenseScreen() {
                     setBillMime(null);
                     setBillName(null);
                   }}
-                  style={[styles.billActionBtn, { backgroundColor: "#FF475722" }]}
+                  style={[styles.billActionBtn, { backgroundColor: colors.destructive + "22" }]}
                 >
-                  <Ionicons name="trash-outline" size={16} color="#FF4757" />
-                  <Text style={[styles.billActionText, { color: "#FF4757" }]}>
+                  <Ionicons name="trash-outline" size={16} color={colors.destructive} />
+                  <Text style={[styles.billActionText, { color: colors.destructive }]}>
                     Remove
                   </Text>
                 </Pressable>
@@ -523,41 +549,18 @@ export default function AddExpenseScreen() {
           },
         ]}
       >
-        <Pressable
+        <PrimaryButton
+          label={
+            saving
+              ? "Saving…"
+              : entryType === "income"
+                ? "Save Cash Surplus"
+                : "Save Expense"
+          }
           onPress={handleSave}
-          disabled={!canSave || saving}
-          style={({ pressed }) => [
-            styles.saveBtn,
-            {
-              backgroundColor: canSave ? colors.primary : colors.muted,
-              opacity: pressed ? 0.85 : 1,
-            },
-          ]}
-        >
-          {saving ? (
-            <ActivityIndicator
-              color={canSave ? colors.primaryForeground : colors.mutedForeground}
-            />
-          ) : (
-            <Ionicons
-              name="checkmark"
-              size={20}
-              color={canSave ? colors.primaryForeground : colors.mutedForeground}
-            />
-          )}
-          <Text
-            style={[
-              styles.saveBtnText,
-              {
-                color: canSave
-                  ? colors.primaryForeground
-                  : colors.mutedForeground,
-              },
-            ]}
-          >
-            {saving ? "Saving…" : entryType === "income" ? "Save Cash Surplus" : "Save Expense"}
-          </Text>
-        </Pressable>
+          disabled={!canSave}
+          loading={saving}
+        />
       </View>
 
       <DatePickerModal
@@ -578,8 +581,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   title: {
-    fontSize: 24,
+    fontSize: 26,
     fontFamily: "Inter_700Bold",
+    letterSpacing: -0.3,
   },
   readOnlyBanner: {
     flexDirection: "row",
@@ -608,6 +612,21 @@ const styles = StyleSheet.create({
     padding: 4,
     borderWidth: 1,
     gap: 4,
+  },
+  pendingHint: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  pendingHintText: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: "Inter_500Medium",
+    lineHeight: 18,
   },
   typeBtn: {
     flex: 1,
