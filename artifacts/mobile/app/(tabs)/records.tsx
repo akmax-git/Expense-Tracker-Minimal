@@ -22,6 +22,7 @@ import { useAuth } from "@/context/AuthContext";
 import {
   Expense,
   ExpenseStatus,
+  Income,
   countsTowardSpend,
   currentMonth,
   dateToString,
@@ -42,6 +43,7 @@ import { PrimaryButton } from "@/components/ui/PrimaryButton";
 
 type BillFilter = "all" | "with_bill" | "no_bill";
 type StatusFilter = "all" | ExpenseStatus;
+type TypeFilter = "all" | "expense" | "income";
 
 function todayStr() {
   return dateToString(new Date());
@@ -85,14 +87,23 @@ export default function RecordsScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { viewingAs, canEdit, canApprove } = useManager();
-  const { expenses, allCategories, deleteExpense, updateExpense, setExpenseStatus, getCategoryInfo } =
-    useExpenses();
+  const {
+    expenses,
+    incomes,
+    allCategories,
+    deleteExpense,
+    deleteIncome,
+    updateExpense,
+    setExpenseStatus,
+    getCategoryInfo,
+  } = useExpenses();
 
   const [search, setSearch] = useState("");
   const [filterMonth, setFilterMonth] = useState<string | null>(currentMonth());
   const [filterCategory, setFilterCategory] = useState<string | null>(null);
   const [filterBill, setFilterBill] = useState<BillFilter>("all");
   const [filterStatus, setFilterStatus] = useState<StatusFilter>("all");
+  const [filterType, setFilterType] = useState<TypeFilter>("all");
   const [editTarget, setEditTarget] = useState<Expense | null>(null);
   const [showEdit, setShowEdit] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -120,14 +131,18 @@ export default function RecordsScreen() {
     expenses.forEach((e) => {
       if (e.date?.length >= 7) set.add(e.date.slice(0, 7));
     });
+    incomes.forEach((i) => {
+      if (i.date?.length >= 7) set.add(i.date.slice(0, 7));
+    });
     return [...set].sort((a, b) => b.localeCompare(a));
-  }, [expenses]);
+  }, [expenses, incomes]);
 
   const chipFilterCount =
     (filterMonth !== null ? 1 : 0) +
     (filterCategory !== null ? 1 : 0) +
     (filterBill !== "all" ? 1 : 0) +
-    (filterStatus !== "all" ? 1 : 0);
+    (filterStatus !== "all" ? 1 : 0) +
+    (filterType !== "all" ? 1 : 0);
 
   const hasActiveFilters =
     chipFilterCount > 0 || search.trim().length > 0;
@@ -138,6 +153,7 @@ export default function RecordsScreen() {
     setFilterCategory(null);
     setFilterBill("all");
     setFilterStatus("all");
+    setFilterType("all");
   };
 
   const clearChipFilters = () => {
@@ -145,11 +161,13 @@ export default function RecordsScreen() {
     setFilterCategory(null);
     setFilterBill("all");
     setFilterStatus("all");
+    setFilterType("all");
   };
 
   // Filter expenses by search + month + category + bill + status
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
+    if (filterType === "income") return [];
     return expenses.filter((e) => {
       if (filterMonth && !e.date.startsWith(filterMonth)) return false;
       if (filterCategory && e.category !== filterCategory) return false;
@@ -169,7 +187,38 @@ export default function RecordsScreen() {
       }
       return true;
     });
-  }, [expenses, search, filterMonth, filterCategory, filterBill, filterStatus]);
+  }, [expenses, search, filterMonth, filterCategory, filterBill, filterStatus, filterType]);
+
+  // Cash Surplus entries have no category / bill / status, so those filters
+  // hide them unless the user explicitly picks the Cash Surplus type.
+  const filteredIncomes = useMemo(() => {
+    if (filterType === "expense") return [];
+    if (
+      filterType === "all" &&
+      (filterCategory !== null || filterBill !== "all" || filterStatus !== "all")
+    ) {
+      return [];
+    }
+    const q = search.toLowerCase().trim();
+    return incomes.filter((i) => {
+      if (filterMonth && !i.date.startsWith(filterMonth)) return false;
+      if (
+        q &&
+        !"cash surplus".includes(q) &&
+        !(i.source ?? "").toLowerCase().includes(q) &&
+        !(i.note ?? "").toLowerCase().includes(q) &&
+        !String(i.amount).includes(q)
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [incomes, search, filterMonth, filterCategory, filterBill, filterStatus, filterType]);
+
+  const filteredIncomeTotal = useMemo(
+    () => filteredIncomes.reduce((s, i) => s + i.amount, 0),
+    [filteredIncomes]
+  );
 
   // Totals only count approved expenses
   const filteredTotal = useMemo(
@@ -182,13 +231,17 @@ export default function RecordsScreen() {
 
   // Group by date
   const grouped = useMemo(() => {
-    const map: Record<string, Expense[]> = {};
+    const map: Record<string, { expenses: Expense[]; incomes: Income[] }> = {};
     for (const e of filtered) {
-      if (!map[e.date]) map[e.date] = [];
-      map[e.date].push(e);
+      if (!map[e.date]) map[e.date] = { expenses: [], incomes: [] };
+      map[e.date].expenses.push(e);
+    }
+    for (const i of filteredIncomes) {
+      if (!map[i.date]) map[i.date] = { expenses: [], incomes: [] };
+      map[i.date].incomes.push(i);
     }
     return Object.entries(map).sort((a, b) => b[0].localeCompare(a[0]));
-  }, [filtered]);
+  }, [filtered, filteredIncomes]);
 
   function openEdit(expense: Expense) {
     if (!canEdit) {
@@ -263,6 +316,25 @@ export default function RecordsScreen() {
     );
     if (!ok) return;
     await deleteExpense(expense.id);
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }
+
+  async function handleDeleteIncome(income: Income) {
+    if (!canEdit) {
+      Alert.alert(
+        "Read only",
+        "You only have view access. Ask the owner for View & Edit permission."
+      );
+      return;
+    }
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const ok = await confirmDestructive(
+      "Delete Cash Surplus?",
+      `Remove ${formatINR(income.amount)} (${income.source})?\n\nThis updates your Cash Surplus and Cash Balance. This cannot be undone.`,
+      "Delete"
+    );
+    if (!ok) return;
+    await deleteIncome(income.id);
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }
 
@@ -486,6 +558,34 @@ export default function RecordsScreen() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.activeFilterRow}
           >
+            {filterType !== "all" ? (
+              <Pressable
+                onPress={() => setFilterType("all")}
+                style={[
+                  styles.activeChip,
+                  {
+                    backgroundColor:
+                      (filterType === "income" ? colors.success : colors.primary) + "14",
+                    borderColor:
+                      (filterType === "income" ? colors.success : colors.primary) + "40",
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.activeChipText,
+                    { color: filterType === "income" ? colors.success : colors.primary },
+                  ]}
+                >
+                  {filterType === "income" ? "Cash Surplus" : "Expenses"}
+                </Text>
+                <Ionicons
+                  name="close"
+                  size={12}
+                  color={filterType === "income" ? colors.success : colors.primary}
+                />
+              </Pressable>
+            ) : null}
             {filterMonth ? (
               <Pressable
                 onPress={() => setFilterMonth(null)}
@@ -603,11 +703,18 @@ export default function RecordsScreen() {
         ) : null}
 
         <Text style={[styles.resultMeta, { color: colors.mutedForeground }]}>
-          {filtered.length} record{filtered.length !== 1 ? "s" : ""}
+          {filtered.length + filteredIncomes.length} record
+          {filtered.length + filteredIncomes.length !== 1 ? "s" : ""}
           {filterMonth ? ` · ${formatMonth(filterMonth)}` : ""}
           {filterCategory ? ` · ${filterCategory}` : ""}
-          {" · "}
-          {formatINR(hasActiveFilters ? filteredTotal : totalAll)} approved
+          {filterType !== "income"
+            ? ` · ${formatINR(hasActiveFilters ? filteredTotal : totalAll)} spent`
+            : ""}
+          {filteredIncomes.length > 0 ? (
+            <Text style={{ color: colors.success }}>
+              {` · +${formatINR(filteredIncomeTotal)} surplus`}
+            </Text>
+          ) : null}
         </Text>
       </View>
 
@@ -655,6 +762,36 @@ export default function RecordsScreen() {
             contentContainerStyle={styles.filterModalContent}
             showsVerticalScrollIndicator={false}
           >
+            <View style={styles.filterSection}>
+              <Text
+                style={[styles.filterSectionLabel, { color: colors.mutedForeground }]}
+              >
+                Type
+              </Text>
+              <View style={styles.chipWrap}>
+                <FilterChip
+                  label="All"
+                  active={filterType === "all"}
+                  onPress={() => setFilterType("all")}
+                />
+                <FilterChip
+                  label="Expenses"
+                  active={filterType === "expense"}
+                  onPress={() =>
+                    setFilterType(filterType === "expense" ? "all" : "expense")
+                  }
+                />
+                <FilterChip
+                  label="Cash Surplus"
+                  active={filterType === "income"}
+                  onPress={() =>
+                    setFilterType(filterType === "income" ? "all" : "income")
+                  }
+                  color={colors.success}
+                />
+              </View>
+            </View>
+
             <View style={styles.filterSection}>
               <Text
                 style={[styles.filterSectionLabel, { color: colors.mutedForeground }]}
@@ -828,17 +965,17 @@ export default function RecordsScreen() {
         {grouped.length === 0 ? (
           <EmptyState
             icon={hasActiveFilters ? "search-outline" : "receipt-outline"}
-            title={hasActiveFilters ? "No matching records" : "No expenses yet"}
+            title={hasActiveFilters ? "No matching records" : "No records yet"}
             subtitle={
               hasActiveFilters
                 ? "Try another month, category, or clear filters"
-                : "Tap + Add to record your first expense"
+                : "Tap + Add to record an expense or Cash Surplus"
             }
             actionLabel={hasActiveFilters ? "Clear filters" : undefined}
             onAction={hasActiveFilters ? clearFilters : undefined}
           />
         ) : (
-          grouped.map(([date, items]) => (
+          grouped.map(([date, { expenses: items, incomes: dayIncomes }]) => (
             <View key={date} style={styles.group}>
               {/* Date header */}
               <View style={styles.dateHeader}>
@@ -846,14 +983,32 @@ export default function RecordsScreen() {
                   {formatDate(date)}
                 </Text>
                 <View style={[styles.dateLine, { backgroundColor: colors.border }]} />
-                <Text style={[styles.dateTotalText, { color: colors.mutedForeground }]}>
-                  {formatINR(
-                    items
-                      .filter(countsTowardSpend)
-                      .reduce((s, e) => s + e.amount, 0)
-                  )}
-                </Text>
+                {dayIncomes.length > 0 ? (
+                  <Text style={[styles.dateTotalText, { color: colors.success }]}>
+                    +{formatINR(dayIncomes.reduce((s, i) => s + i.amount, 0))}
+                  </Text>
+                ) : null}
+                {items.length > 0 ? (
+                  <Text style={[styles.dateTotalText, { color: colors.mutedForeground }]}>
+                    {formatINR(
+                      items
+                        .filter(countsTowardSpend)
+                        .reduce((s, e) => s + e.amount, 0)
+                    )}
+                  </Text>
+                ) : null}
               </View>
+
+              {/* Cash Surplus cards */}
+              {dayIncomes.map((income) => (
+                <IncomeCard
+                  key={income.id}
+                  income={income}
+                  dateLabel={formatDateFull(income.date)}
+                  canEdit={canEdit}
+                  onDelete={() => handleDeleteIncome(income)}
+                />
+              ))}
 
               {/* Receipt cards */}
               {items.map((expense) => {
@@ -1100,6 +1255,101 @@ export default function RecordsScreen() {
           </ScrollView>
         </View>
       </Modal>
+    </View>
+  );
+}
+
+function IncomeCard({
+  income,
+  dateLabel,
+  canEdit,
+  onDelete,
+}: {
+  income: Income;
+  dateLabel: string;
+  canEdit: boolean;
+  onDelete: () => void;
+}) {
+  const colors = useColors();
+
+  return (
+    <View
+      style={[
+        styles.receiptCard,
+        { backgroundColor: colors.card, borderColor: colors.success + "40" },
+      ]}
+    >
+      <View style={[styles.receiptStripe, { backgroundColor: colors.success }]} />
+      <View style={styles.receiptBody}>
+        <View style={styles.receiptTopRow}>
+          <View style={styles.receiptCatRow}>
+            <View
+              style={[styles.receiptIconBox, { backgroundColor: colors.success + "22" }]}
+            >
+              <Ionicons name="arrow-down-circle-outline" size={18} color={colors.success} />
+            </View>
+            <View style={{ gap: 4, flexShrink: 1 }}>
+              <Text
+                style={[styles.receiptCategory, { color: colors.foreground }]}
+                numberOfLines={1}
+              >
+                {income.source || "Cash Surplus"}
+              </Text>
+              <View
+                style={[
+                  styles.incomeTag,
+                  {
+                    backgroundColor: colors.success + "18",
+                    borderColor: colors.success + "40",
+                  },
+                ]}
+              >
+                <Text style={[styles.incomeTagText, { color: colors.success }]}>
+                  Cash Surplus
+                </Text>
+              </View>
+            </View>
+          </View>
+          <Text style={[styles.receiptAmount, { color: colors.success }]}>
+            +{formatINR(income.amount)}
+          </Text>
+        </View>
+
+        <Text style={[styles.receiptDate, { color: colors.mutedForeground }]}>
+          {dateLabel}
+        </Text>
+
+        {income.note ? (
+          <Text
+            style={[styles.receiptNote, { color: colors.mutedForeground }]}
+            numberOfLines={2}
+          >
+            "{income.note}"
+          </Text>
+        ) : null}
+
+        {canEdit ? (
+          <>
+            <View style={[styles.receiptDivider, { borderColor: colors.border }]} />
+            <View style={[styles.receiptActions, { justifyContent: "flex-end" }]}>
+              <Pressable
+                onPress={onDelete}
+                style={[
+                  styles.receiptBtn,
+                  { backgroundColor: colors.destructive + "22" },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Delete Cash Surplus"
+              >
+                <Ionicons name="trash-outline" size={14} color={colors.destructive} />
+                <Text style={[styles.receiptBtnText, { color: colors.destructive }]}>
+                  Delete
+                </Text>
+              </Pressable>
+            </View>
+          </>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -1551,6 +1801,18 @@ const styles = StyleSheet.create({
   },
   receiptStripe: {
     width: 4,
+  },
+  incomeTag: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  incomeTagText: {
+    fontSize: 10,
+    fontFamily: "Inter_600SemiBold",
+    letterSpacing: 0.2,
   },
   receiptBody: {
     flex: 1,
