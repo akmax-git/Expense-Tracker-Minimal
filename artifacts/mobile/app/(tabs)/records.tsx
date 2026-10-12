@@ -93,6 +93,7 @@ export default function RecordsScreen() {
     allCategories,
     deleteExpense,
     deleteIncome,
+    updateIncome,
     updateExpense,
     setExpenseStatus,
     getCategoryInfo,
@@ -120,6 +121,14 @@ export default function RecordsScreen() {
   const [editBillCleared, setEditBillCleared] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+
+  // Cash Surplus edit form state
+  const [incomeEditTarget, setIncomeEditTarget] = useState<Income | null>(null);
+  const [incomeEditAmount, setIncomeEditAmount] = useState("");
+  const [incomeEditSource, setIncomeEditSource] = useState("");
+  const [incomeEditNote, setIncomeEditNote] = useState("");
+  const [incomeEditDate, setIncomeEditDate] = useState("");
+  const [incomeEditSaving, setIncomeEditSaving] = useState(false);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
@@ -336,6 +345,56 @@ export default function RecordsScreen() {
     if (!ok) return;
     await deleteIncome(income.id);
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }
+
+  function openIncomeEdit(income: Income) {
+    if (!canEdit) {
+      Alert.alert(
+        "Read only",
+        "You only have view access. Ask the owner for View & Edit permission."
+      );
+      return;
+    }
+    setIncomeEditTarget(income);
+    setIncomeEditAmount(String(income.amount));
+    setIncomeEditSource(income.source ?? "");
+    setIncomeEditNote(income.note ?? "");
+    setIncomeEditDate(income.date);
+  }
+
+  function closeIncomeEdit() {
+    setIncomeEditTarget(null);
+  }
+
+  async function handleSaveIncomeEdit() {
+    if (!incomeEditTarget || !canEdit) return;
+    const amount = parseFloat(incomeEditAmount);
+    if (!amount || amount <= 0) {
+      Alert.alert("Invalid amount", "Enter an amount greater than 0.");
+      return;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(incomeEditDate)) {
+      Alert.alert("Invalid date", "Use the format YYYY-MM-DD.");
+      return;
+    }
+    setIncomeEditSaving(true);
+    try {
+      await updateIncome(incomeEditTarget.id, {
+        amount,
+        source: incomeEditSource.trim() || "Cash Surplus",
+        note: incomeEditNote,
+        date: incomeEditDate,
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      closeIncomeEdit();
+    } catch (err: any) {
+      Alert.alert(
+        "Could not save",
+        err?.message ?? "Something went wrong. Please try again."
+      );
+    } finally {
+      setIncomeEditSaving(false);
+    }
   }
 
   async function handleSaveEdit() {
@@ -1006,6 +1065,7 @@ export default function RecordsScreen() {
                   income={income}
                   dateLabel={formatDateFull(income.date)}
                   canEdit={canEdit}
+                  onEdit={() => openIncomeEdit(income)}
                   onDelete={() => handleDeleteIncome(income)}
                 />
               ))}
@@ -1255,6 +1315,141 @@ export default function RecordsScreen() {
           </ScrollView>
         </View>
       </Modal>
+
+      {/* Cash Surplus Edit Modal */}
+      <Modal
+        visible={incomeEditTarget !== null}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={closeIncomeEdit}
+      >
+        <View style={[styles.modalRoot, { backgroundColor: colors.background }]}>
+          <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+            <Pressable onPress={closeIncomeEdit} hitSlop={8}>
+              <Text style={[styles.modalCancel, { color: colors.mutedForeground }]}>
+                Cancel
+              </Text>
+            </Pressable>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>
+              Edit Cash Surplus
+            </Text>
+            <Pressable
+              onPress={handleSaveIncomeEdit}
+              disabled={incomeEditSaving}
+              hitSlop={8}
+            >
+              <Text
+                style={[
+                  styles.modalSave,
+                  { color: colors.success, opacity: incomeEditSaving ? 0.5 : 1 },
+                ]}
+              >
+                {incomeEditSaving ? "Saving…" : "Save"}
+              </Text>
+            </Pressable>
+          </View>
+
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.modalContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={[styles.editAmountCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.editAmountLabel, { color: colors.mutedForeground }]}>AMOUNT</Text>
+              <View style={styles.editAmountRow}>
+                <Text style={[styles.editCurrencySymbol, { color: colors.success }]}>₹</Text>
+                <TextInput
+                  value={incomeEditAmount}
+                  onChangeText={setIncomeEditAmount}
+                  keyboardType="decimal-pad"
+                  placeholder="0"
+                  placeholderTextColor={colors.mutedForeground}
+                  style={[styles.editAmountInput, { color: colors.foreground }]}
+                  autoFocus
+                />
+              </View>
+            </View>
+
+            <View style={styles.editSection}>
+              <Text style={[styles.editSectionLabel, { color: colors.mutedForeground }]}>DATE</Text>
+              <View style={styles.dateRow}>
+                {[
+                  { label: "Today", value: todayStr() },
+                  { label: "Yesterday", value: yesterdayStr() },
+                ].map((opt) => (
+                  <Pressable
+                    key={opt.value}
+                    onPress={() => setIncomeEditDate(opt.value)}
+                    style={[
+                      styles.dateChip,
+                      {
+                        backgroundColor: incomeEditDate === opt.value ? colors.primary : colors.card,
+                        borderColor: incomeEditDate === opt.value ? colors.primary : colors.border,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.dateChipText,
+                        { color: incomeEditDate === opt.value ? "#fff" : colors.foreground },
+                      ]}
+                    >
+                      {opt.label}
+                    </Text>
+                  </Pressable>
+                ))}
+                <TextInput
+                  value={incomeEditDate}
+                  onChangeText={setIncomeEditDate}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={colors.mutedForeground}
+                  style={[
+                    styles.dateInput,
+                    { color: colors.foreground, backgroundColor: colors.card, borderColor: colors.border },
+                  ]}
+                />
+              </View>
+            </View>
+
+            <View style={styles.editSection}>
+              <Text style={[styles.editSectionLabel, { color: colors.mutedForeground }]}>SOURCE</Text>
+              <TextInput
+                value={incomeEditSource}
+                onChangeText={setIncomeEditSource}
+                placeholder="e.g. Transfer, Salary"
+                placeholderTextColor={colors.mutedForeground}
+                style={[
+                  styles.noteInput,
+                  { color: colors.foreground, backgroundColor: colors.card, borderColor: colors.border },
+                ]}
+              />
+            </View>
+
+            <View style={styles.editSection}>
+              <Text style={[styles.editSectionLabel, { color: colors.mutedForeground }]}>NOTE</Text>
+              <TextInput
+                value={incomeEditNote}
+                onChangeText={setIncomeEditNote}
+                placeholder="What was this for?"
+                placeholderTextColor={colors.mutedForeground}
+                style={[
+                  styles.noteInput,
+                  { color: colors.foreground, backgroundColor: colors.card, borderColor: colors.border },
+                ]}
+                multiline
+                numberOfLines={2}
+              />
+            </View>
+
+            <PrimaryButton
+              label={incomeEditSaving ? "Saving…" : "Save Changes"}
+              onPress={handleSaveIncomeEdit}
+              loading={incomeEditSaving}
+              disabled={incomeEditSaving}
+            />
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1263,11 +1458,13 @@ function IncomeCard({
   income,
   dateLabel,
   canEdit,
+  onEdit,
   onDelete,
 }: {
   income: Income;
   dateLabel: string;
   canEdit: boolean;
+  onEdit: () => void;
   onDelete: () => void;
 }) {
   const colors = useColors();
@@ -1332,6 +1529,15 @@ function IncomeCard({
           <>
             <View style={[styles.receiptDivider, { borderColor: colors.border }]} />
             <View style={[styles.receiptActions, { justifyContent: "flex-end" }]}>
+              <Pressable
+                onPress={onEdit}
+                style={[styles.receiptBtn, { backgroundColor: colors.primary + "18" }]}
+                accessibilityRole="button"
+                accessibilityLabel="Edit Cash Surplus"
+              >
+                <Ionicons name="pencil-outline" size={14} color={colors.primary} />
+                <Text style={[styles.receiptBtnText, { color: colors.primary }]}>Edit</Text>
+              </Pressable>
               <Pressable
                 onPress={onDelete}
                 style={[

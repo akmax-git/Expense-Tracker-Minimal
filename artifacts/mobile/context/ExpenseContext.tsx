@@ -133,6 +133,10 @@ interface ExpenseContextValue {
   /** Pending expenses awaiting manager approval */
   getPendingCount: (month?: string) => number;
   addIncome: (income: Omit<Income, "id" | "createdAt">) => Promise<void>;
+  updateIncome: (
+    id: string,
+    income: Omit<Income, "id" | "createdAt">
+  ) => Promise<void>;
   deleteIncome: (id: string) => Promise<void>;
   setMonthBudget: (month: string, amount: number) => Promise<void>;
   /**
@@ -412,6 +416,21 @@ export function ExpenseProvider({
               if (prev.find((i) => i.id === row.id)) return prev;
               return [row, ...prev];
             });
+          } else if (payload.eventType === "UPDATE") {
+            const r = payload.new as any;
+            setIncomes((prev) =>
+              prev.map((i) =>
+                i.id === r.id
+                  ? {
+                      ...i,
+                      amount: Number(r.amount),
+                      note: r.note ?? "",
+                      source: r.source ?? "Cash Surplus",
+                      date: r.date,
+                    }
+                  : i
+              )
+            );
           } else if (payload.eventType === "DELETE") {
             setIncomes((prev) =>
               prev.filter((i) => i.id !== (payload.old as any).id)
@@ -667,6 +686,46 @@ export function ExpenseProvider({
     [userId]
   );
 
+  const updateIncome = useCallback(
+    async (id: string, income: Omit<Income, "id" | "createdAt">) => {
+      const previous = incomes;
+      const existing = incomes.find((i) => i.id === id);
+      if (!existing) {
+        throw new Error("Cash Surplus entry not found");
+      }
+
+      const updated: Income = { ...existing, ...income };
+      setIncomes((prev) => prev.map((i) => (i.id === id ? updated : i)));
+
+      const { data, error } = await supabase
+        .from("incomes")
+        .update({
+          amount: income.amount,
+          note: income.note,
+          source: income.source,
+          date: income.date,
+        })
+        .eq("id", id)
+        .eq("user_id", userId)
+        .select("id");
+
+      if (error) {
+        setIncomes(previous);
+        setSyncError(error.message);
+        throw new Error(error.message);
+      }
+
+      // RLS / wrong id can update 0 rows with no error — treat as failure
+      if (!data || data.length === 0) {
+        setIncomes(previous);
+        const msg = "Could not update Cash Surplus. Please try again.";
+        setSyncError(msg);
+        throw new Error(msg);
+      }
+    },
+    [userId, incomes]
+  );
+
   const deleteIncome = useCallback(
     async (id: string) => {
       const previous = incomes;
@@ -894,6 +953,7 @@ export function ExpenseProvider({
         setExpenseStatus,
         deleteExpense,
         addIncome,
+        updateIncome,
         deleteIncome,
         setMonthBudget,
         getMonthBudget,
